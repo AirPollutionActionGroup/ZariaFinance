@@ -15,6 +15,7 @@ import com.ngo.finance.donor.repository.CountryRepository;
 import com.ngo.finance.donor.repository.DonorRepository;
 import com.ngo.finance.donor.repository.StateRepository;
 import com.ngo.finance.donor.service.impl.DonorServiceImpl;
+import com.ngo.finance.masters.documenttype.service.DocumentTypeService;
 import com.ngo.finance.masters.donortype.entity.DonorTypeMaster;
 import com.ngo.finance.masters.donortype.repository.DonorTypeMasterRepository;
 import java.util.Optional;
@@ -44,6 +45,9 @@ public class DonorServiceTest {
 
     @Mock
     private DonorTypeMasterRepository donorTypeMasterRepository;
+
+    @Mock
+    private DocumentTypeService documentTypeService;
 
     @InjectMocks
     private DonorServiceImpl donorService;
@@ -90,5 +94,44 @@ public class DonorServiceTest {
         verify(donorMapper).toEntity(request);
         verify(donorRepository).save(any(DonorMaster.class));
         verify(donorMapper).toResponse(savedEntity);
+    }
+
+    private static DonorMaster donorWithCode(String code) {
+        DonorMaster donor = new DonorMaster();
+        donor.setDonorCode(code);
+        return donor;
+    }
+
+    @Test
+    public void nextDonorCode_startsAt001WhenNoDonorsExist() {
+        when(donorRepository.findTopByDonorCodeStartingWithOrderByDonorCodeDesc("DNR-CD-"))
+                .thenReturn(Optional.empty());
+
+        assertEquals("DNR-CD-001", donorService.nextDonorCode());
+    }
+
+    @Test
+    public void nextDonorCode_isOneMoreThanTheHighestCode() {
+        when(donorRepository.findTopByDonorCodeStartingWithOrderByDonorCodeDesc("DNR-CD-"))
+                .thenReturn(Optional.of(donorWithCode("DNR-CD-014")));
+
+        assertEquals("DNR-CD-015", donorService.nextDonorCode());
+    }
+
+    @Test
+    public void nextDonorCode_skipsACodeThatIsAlreadyTaken() {
+        when(donorRepository.findTopByDonorCodeStartingWithOrderByDonorCodeDesc("DNR-CD-"))
+                .thenReturn(Optional.of(donorWithCode("DNR-CD-014")));
+        when(donorRepository.findByDonorCode("DNR-CD-015")).thenReturn(Optional.of(donorWithCode("DNR-CD-015")));
+
+        assertEquals("DNR-CD-016", donorService.nextDonorCode());
+    }
+
+    @Test
+    public void nextDonorCode_ignoresAHighestCodeThatIsNotNumeric() {
+        when(donorRepository.findTopByDonorCodeStartingWithOrderByDonorCodeDesc("DNR-CD-"))
+                .thenReturn(Optional.of(donorWithCode("DNR-CD-ABC")));
+
+        assertEquals("DNR-CD-001", donorService.nextDonorCode());
     }
 }
