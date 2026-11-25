@@ -25,7 +25,9 @@ export function fromNoteResponse(dto) {
     lineDescription: dto.line || '',
     date: dto.date,
     amount: num(dto.amount),
-    reason: dto.reason || null,
+    // Over-budget reason (Masters → Over-budget reasons): its name for display, its id for the form.
+    reason: dto.overBudgetReason?.name || null,
+    reasonId: dto.overBudgetReason?.id || null,
     book: dto.book,
     payeeCategory: dto.payeeCategory || null,
     payee: dto.payee || null,
@@ -39,9 +41,14 @@ export function fromNoteResponse(dto) {
     disbursementType: dto.disbursementType || null,
     tranche: dto.tranche || null,
     reference: dto.reference || '',
+    tallyVoucherType: dto.tallyVoucherType || null,
+    tallyVoucherNo: dto.tallyVoucherNo || null,
     remarks: dto.remarks || '',
     // Only the file name is stored server-side (no file storage yet), so there's no download url.
     attachment: dto.attachmentName ? { name: dto.attachmentName } : null,
+    currency: dto.currency || null,
+    foreignAmount: dto.foreignAmount != null ? num(dto.foreignAmount) : null,
+    fxRate: dto.fxRate != null ? num(dto.fxRate) : null,
     createdBy: dto.createdBy,
     createdAt: dto.createdAt,
   };
@@ -53,7 +60,7 @@ export function toCreateNoteRequest(input, { actor } = {}) {
     outflowLineId: input.outflowLineId || null,
     date: input.date,
     amount: num(input.amount),
-    reason: input.reason || null,
+    overBudgetReasonId: input.overBudgetReasonId ? Number(input.overBudgetReasonId) : null,
     book: input.book,
     payeeCategory: input.payeeCategory || null,
     payee: toRef(input.payee),
@@ -67,8 +74,14 @@ export function toCreateNoteRequest(input, { actor } = {}) {
     disbursementType: input.disbursementType || null,
     tranche: toRef(input.tranche),
     reference: input.reference?.trim() || null,
+    tallyVoucherType: input.tallyVoucherType?.trim() || null,
+    tallyVoucherNo: input.tallyVoucherNo?.trim() || null,
     remarks: input.remarks?.trim() || null,
     attachmentName: input.attachment?.name || null,
     actor: actor || null,
+    // FC receipt: the amount in the donor's currency and the rate it was converted at.
+    ...(input.currency
+      ? { currency: input.currency, foreignAmount: num(input.foreignAmount), fxRate: num(input.fxRate) }
+      : {}),
   };
 }

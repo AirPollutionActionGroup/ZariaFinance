@@ -1,11 +1,12 @@
 import { FUND_SOURCE_DOMICILE } from '../constants.js';
+import { toContactItems, toContactRows } from '../lib/donorContacts.js';
 
 /**
  * DonorMapper — translates between backend DTOs (DonorResponse,
  * CreateDonorRequest, UpdateDonorRequest) and frontend view/form models.
  * Backend field names are preserved verbatim, except the identity document:
- * the form's `idType`/`idNumber` map to the backend's `documentType` (a
- * Document Type master code such as PAN_CARD)/`documentNumber`, and
+ * the form's `idType`/`idNumber` map to the backend's `documentTypeId` (a
+ * Document Type master id, kept as a string in the form)/`documentNumber`, and
  * `passportNumber` maps to `passportId`.
  */
 
@@ -16,7 +17,7 @@ export function fromDonorResponse(dto) {
     donorTypeLabel: dto.donorTypeName || '—',
     fundSourceDomicileLabel: FUND_SOURCE_DOMICILE[dto.fundSourceDomicile] || dto.fundSourceDomicile || '—',
     contacts: dto.contacts || [],
-    idType: dto.documentType || '',
+    idType: dto.documentTypeId != null ? String(dto.documentTypeId) : '',
     idNumber: dto.documentNumber || '',
     passportNumber: dto.passportId || '',
   };
@@ -42,14 +43,12 @@ export function toCreateDonorRequest(values) {
     foreignFundSourceType: nullIfBlank(values.foreignFundSourceType),
     foreignCountryId: nullIfBlank(values.foreignCountryId),
     passportId: nullIfBlank(values.passportNumber),
-    documentType: values.idType || null,
+    documentTypeId: values.idType ? Number(values.idType) : null,
     documentNumber: nullIfBlank(values.idNumber),
     email: values.email.trim(),
     phoneNumber: nullIfBlank(values.phoneNumber),
     website: nullIfBlank(values.website),
-    spocNameOfThePerson: values.spocNameOfThePerson.trim(),
-    spocPhoneNumber: nullIfBlank(values.spocPhoneNumber),
-    spocEmail: values.spocEmail.trim(),
+    contacts: toContactItems(values.contacts),
     address: nullIfBlank(values.address),
     address2: nullIfBlank(values.address2),
     cityId: numberOrNull(values.cityId),
@@ -80,7 +79,7 @@ export function toDonorFormValues(donor) {
     fundSourceDomicile: donor.fundSourceDomicile || '',
     fcraApplicable: Boolean(donor.fcraApplicable),
     book: donor.book || '',
-    idType: donor.documentType || '',
+    idType: donor.documentTypeId != null ? String(donor.documentTypeId) : '',
     idNumber: donor.documentNumber || '',
     foreignFundSourceType: donor.foreignFundSourceType || '',
     foreignCountryId: donor.foreignCountryId || '',
@@ -88,9 +87,7 @@ export function toDonorFormValues(donor) {
     email: donor.email || '',
     phoneNumber: donor.phoneNumber || '',
     website: donor.website || '',
-    spocNameOfThePerson: donor.spocNameOfThePerson || '',
-    spocPhoneNumber: donor.spocPhoneNumber || '',
-    spocEmail: donor.spocEmail || '',
+    contacts: toContactRows(donor.contacts),
     address: donor.address || '',
     address2: donor.address2 || '',
     cityId: donor.cityId || '',

@@ -30,7 +30,7 @@ public class FxRateResponse {
 
     private BigDecimal rateToInr;
 
-    /** 'PAR' (INR), 'RBI', 'SEED', 'MANUAL' or 'UNAVAILABLE'. */
+    /** 'PAR' (INR), 'FBIL' (RBI reference rate), 'ECB', 'SEED', 'MANUAL' or 'UNAVAILABLE'. */
     private String source;
 
     private Boolean stale;

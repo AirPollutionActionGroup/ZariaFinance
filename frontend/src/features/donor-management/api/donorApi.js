@@ -8,6 +8,9 @@ export const donorApi = {
   /** POST /api/v1/donors — body: CreateDonorRequest → DonorResponse (201). */
   create: (payload) => http.post('/v1/donors', payload),
 
+  /** POST /api/v1/donors/import — CSV rows; dryRun checks only → DonorImportResponse. */
+  importRows: (payload) => http.post('/v1/donors/import', payload),
+
   /** GET /api/v1/donors/{id} → DonorResponse. */
   getById: (id) => http.get(`/v1/donors/${id}`),
 

@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react';
 import { Box, Button, Chip, MenuItem, Select, Stack, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import AddIcon from '@mui/icons-material/Add';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import { downloadCsv } from '../../../lib/export/csv.js';
+import { employeesCsv } from '../lib/employeeExport.js';
 import { DataTable, PageHeader, SearchField, StatStrip, StatusChip } from '../../../shared/components/index.js';
 import { formatDate } from '../../../lib/format/date.js';
 import { formatInr } from '../../../lib/format/currency.js';
@@ -242,6 +245,17 @@ export function EmployeeListPage() {
         <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
           Showing {rows.length} of {employees.length}
         </Typography>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<FileDownloadOutlinedIcon />}
+          onClick={() => downloadCsv(`employees-${new Date().toLocaleDateString('en-CA')}.csv`, employeesCsv(rows))}
+          disabled={!rows.length}
+          title={`Download the ${rows.length} employee${rows.length === 1 ? '' : 's'} shown as a CSV file`}
+          sx={{ whiteSpace: 'nowrap' }}
+        >
+          Export {rows.length}
+        </Button>
       </Stack>
 
       <DataTable

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   Box,
   Button,
+  Card,
   Checkbox,
   Dialog,
   DialogActions,
@@ -14,8 +15,6 @@ import {
   OutlinedInput,
   Select,
   Stack,
-  Tab,
-  Tabs,
   TextField,
   Typography,
 } from '@mui/material';
@@ -25,10 +24,12 @@ import BadgeIcon from '@mui/icons-material/Badge';
 import VolunteerActivismIcon from '@mui/icons-material/VolunteerActivism';
 import CategoryIcon from '@mui/icons-material/Category';
 import TuneIcon from '@mui/icons-material/Tune';
+import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import ContactPageIcon from '@mui/icons-material/ContactPage';
 import { useSearchParams } from 'react-router-dom';
 import { BudgetCategoryTab } from '../components/BudgetCategoryTab.jsx';
 import { DocumentTypeTab } from '../components/DocumentTypeTab.jsx';
+import { OverBudgetReasonTab } from '../components/OverBudgetReasonTab.jsx';
 import { FundSuggestionWeightsTab } from '../components/FundSuggestionWeightsTab.jsx';
 import {
   MasterToolbar,
@@ -38,7 +39,11 @@ import {
   statusColumn,
   toggleDialogText,
 } from '../components/MasterListParts.jsx';
-import { ConfirmDialog, DataTable, PageHeader, StatusChip } from '../../../shared/components/index.js';
+import { ConfirmDialog, DataTable, StatusChip } from '../../../shared/components/index.js';
+import { MasterHeading, MasterNav } from '../components/MasterNav.jsx';
+import { useDocumentTypes } from '../hooks/useDocumentTypes.js';
+import { useOverBudgetReasons } from '../hooks/useOverBudgetReasons.js';
+import { useBudgetCategories } from '../hooks/useBudgetCategories.js';
 import { useCreateDepartment, useDepartmentLifecycle, useDepartments } from '../hooks/useDepartments.js';
 import { useCreateDesignation, useDesignationLifecycle, useDesignations } from '../hooks/useDesignations.js';
 import { useCreateDonorType, useDonorTypeLifecycle, useDonorTypes } from '../hooks/useDonorTypes.js';
@@ -51,40 +56,70 @@ import { useCreateDonorType, useDonorTypeLifecycle, useDonorTypes } from '../hoo
 const MASTERS = [
   {
     id: 'department',
+    group: 'People',
     label: 'Departments',
     icon: ApartmentIcon,
     addLabel: 'New department',
+    hint: 'Teams for designations',
+    description: 'The teams that designations belong to.',
   },
   {
     id: 'designation',
+    group: 'People',
     label: 'Designations',
     icon: BadgeIcon,
     addLabel: 'New designation',
+    hint: 'Job titles and sign-offs',
+    description: 'Job titles, used for employees, sign-offs and reminders.',
   },
   {
     id: 'donor-type',
+    group: 'Donors',
     label: 'Donor types',
     icon: VolunteerActivismIcon,
     addLabel: 'New donor type',
+    hint: 'Donor kinds and books',
+    description: 'Kinds of donor, and which fund sources and books (LC / FC) each can give through.',
   },
   {
     id: 'document-type',
+    group: 'Donors',
     label: 'Document types',
     icon: ContactPageIcon,
     addLabel: 'New document type',
+    hint: 'Donor ID and tax papers',
+    description: 'ID and tax documents collected from donors.',
   },
   {
     id: 'budget-category',
+    group: 'Finance',
     label: 'Budget categories',
     icon: CategoryIcon,
     addLabel: 'New budget category',
+    hint: 'Cost heads for budgets',
+    description: 'Cost heads used on budget lines and in spending limits.',
+  },
+  {
+    id: 'over-budget-reason',
+    group: 'Finance',
+    label: 'Over-budget reasons',
+    icon: TrendingUpRoundedIcon,
+    addLabel: 'New reason',
+    hint: 'Why a line went over budget',
+    description: 'Reasons a debit note can give when it takes a budget line over budget.',
   },
   {
     id: 'fund-suggestion',
+    group: 'Finance',
     label: 'Fund suggestion',
     icon: TuneIcon,
+    hint: 'How funds are ranked',
+    description: 'How a debit note scores the eligible funds to suggest the best one.',
   },
 ];
+
+/** { active, total } for a list of rows with a status. */
+const countOf = (rows) => (rows ? { total: rows.length, active: rows.filter((r) => r.status === 'ACTIVE').length } : null);
 
 const DOMICILE_LABEL = { DOMESTIC: 'Domestic', FOREIGN: 'Foreign' };
 
@@ -125,6 +160,7 @@ export function MasterPage() {
   // Budget Category / Document Type — the tab components own their lists; this page only opens their Add dialogs.
   const [newBudgetCategoryOpen, setNewBudgetCategoryOpen] = useState(false);
   const [newDocumentTypeOpen, setNewDocumentTypeOpen] = useState(false);
+  const [newReasonOpen, setNewReasonOpen] = useState(false);
 
   const departmentsQuery = useDepartments(deptSearch);
   const createDepartment = useCreateDepartment();
@@ -143,6 +179,19 @@ export function MasterPage() {
   // the tabs' cache entries.
   const allDepartmentsQuery = useDepartments('');
   const allDesignationsQuery = useDesignations('');
+  // Unsearched lists for the side list's counts (they share the tabs' cache).
+  const allDonorTypesQuery = useDonorTypes('');
+  const allDocumentTypesQuery = useDocumentTypes('');
+  const allBudgetCategoriesQuery = useBudgetCategories('');
+  const allReasonsQuery = useOverBudgetReasons('');
+  const counts = {
+    department: countOf(allDepartmentsQuery.data),
+    designation: countOf(allDesignationsQuery.data),
+    'donor-type': countOf(allDonorTypesQuery.data),
+    'document-type': countOf(allDocumentTypesQuery.data),
+    'budget-category': countOf(allBudgetCategoriesQuery.data),
+    'over-budget-reason': countOf(allReasonsQuery.data),
+  };
 
   // Defaults the Add Designation dialog's department to the first one loaded,
   // until the user picks a different one — computed, not stored, to avoid a
@@ -325,25 +374,35 @@ export function MasterPage() {
 
   return (
     <Box>
-      <PageHeader
-        title="Master Configuration"
-        subtitle="Lists and settings used across the finance, donor and HR modules"
-      />
-
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2.5 }}>
-        <Tabs
-          value={activeTab}
-          onChange={(_, id) => selectTab(id)}
-          variant="scrollable"
-          scrollButtons="auto"
-          sx={{ '& .MuiTab-root': { textTransform: 'none', fontWeight: 600, fontSize: 13.5, minHeight: 44 } }}
-        >
-          {MASTERS.map((m) => {
-            const Icon = m.icon;
-            return <Tab key={m.id} value={m.id} icon={<Icon sx={{ fontSize: 18 }} />} iconPosition="start" label={m.label} />;
-          })}
-        </Tabs>
+      <Box sx={{ mb: 2.5 }}>
+        <Typography component="h1" sx={{ fontSize: { xs: 24, md: 28 }, fontWeight: 700, lineHeight: 1.2, letterSpacing: '-0.015em' }}>
+          Masters
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          Lists and settings used across the finance, donor and HR modules.
+        </Typography>
       </Box>
+
+      {/* One settings panel: the menu on the left, the open master on the right. */}
+      <Card
+        sx={{
+          display: 'grid',
+          overflow: 'hidden',
+          gridTemplateColumns: { xs: 'minmax(0, 1fr)', md: '240px minmax(0, 1fr)' },
+          minHeight: { md: 520 },
+        }}
+      >
+        <MasterNav
+          groups={['People', 'Donors', 'Finance'].map((label) => ({
+            label,
+            items: MASTERS.filter((m) => m.group === label).map((m) => ({ ...m, count: counts[m.id] })),
+          }))}
+          activeId={activeTab}
+          onSelect={selectTab}
+        />
+
+        <Box component="section" aria-label={active.label} sx={{ minWidth: 0 }}>
+          <MasterHeading master={active} count={counts[activeTab]} />
 
       {activeTab === 'department' && (
         <>
@@ -358,6 +417,7 @@ export function MasterPage() {
           />
           <DataTable
             dense
+            flat
             columns={departmentColumns}
             rows={filteredDepartments}
             getRowKey={(r) => r.id}
@@ -383,6 +443,7 @@ export function MasterPage() {
           />
           <DataTable
             dense
+            flat
             columns={designationColumns}
             rows={filteredDesignations}
             getRowKey={(r) => r.id}
@@ -408,6 +469,7 @@ export function MasterPage() {
           />
           <DataTable
             dense
+            flat
             columns={donorTypeColumns}
             rows={filteredDonorTypes}
             getRowKey={(r) => r.id}
@@ -436,7 +498,17 @@ export function MasterPage() {
         />
       )}
 
+      {activeTab === 'over-budget-reason' && (
+        <OverBudgetReasonTab
+          createOpen={newReasonOpen}
+          onCreate={() => setNewReasonOpen(true)}
+          onCreateClose={() => setNewReasonOpen(false)}
+        />
+      )}
+
       {activeTab === 'fund-suggestion' && <FundSuggestionWeightsTab />}
+        </Box>
+      </Card>
 
       {/* DIALOG: ADD DEPARTMENT */}
       <Dialog open={newDeptOpen} onClose={() => setNewDeptOpen(false)} maxWidth="xs" fullWidth>

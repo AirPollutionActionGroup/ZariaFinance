@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react';
 import { Box, Button, Chip, Link, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import AddIcon from '@mui/icons-material/Add';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import { downloadCsv } from '../../../lib/export/csv.js';
+import { vendorsCsv } from '../lib/vendorExport.js';
 import { ACTIONS, PermissionGate } from '../../../core/permissions/index.js';
 import { DataTable, PageHeader, SearchField, StatStrip, StatusChip } from '../../../shared/components/index.js';
 import { useVendors } from '../hooks/useVendors.js';
@@ -253,6 +256,17 @@ export function VendorListPage() {
             Clear filters
           </Link>
         ) : null}
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<FileDownloadOutlinedIcon />}
+          onClick={() => downloadCsv(`vendors-${new Date().toLocaleDateString('en-CA')}.csv`, vendorsCsv(rows))}
+          disabled={!rows.length}
+          title={`Download the ${rows.length} vendor${rows.length === 1 ? '' : 's'} shown as a CSV file — it includes full bank account, PAN and Aadhaar numbers, so keep it confidential`}
+          sx={{ whiteSpace: 'nowrap' }}
+        >
+          Export {rows.length}
+        </Button>
       </Stack>
 
       <DataTable

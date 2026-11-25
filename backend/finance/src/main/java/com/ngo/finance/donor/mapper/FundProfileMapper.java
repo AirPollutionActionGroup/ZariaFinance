@@ -8,8 +8,12 @@ import com.ngo.finance.donor.entity.DonorFundProfile;
 import com.ngo.finance.donor.entity.DonorReleaseCriteria;
 import com.ngo.finance.donor.entity.DonorTrancheCriterion;
 import com.ngo.finance.donor.entity.DonorUtilisationRule;
+import com.ngo.finance.donor.entity.ForeignAmount;
+import com.ngo.finance.donor.enums.ScheduleType;
+import com.ngo.finance.donor.entity.CityMaster;
 import com.ngo.finance.donor.entity.SpendableGeography;
 import com.ngo.finance.donor.entity.StateMaster;
+import com.ngo.finance.donor.repository.CityRepository;
 import com.ngo.finance.donor.repository.StateRepository;
 import com.ngo.finance.masters.designation.entity.Designation;
 import com.ngo.finance.masters.designation.repository.DesignationRepository;
@@ -17,6 +21,9 @@ import com.ngo.finance.programme.entity.Programme;
 import com.ngo.finance.programme.repository.ProgrammeRepository;
 import java.math.BigDecimal;
 import java.util.Comparator;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -38,6 +45,9 @@ public class FundProfileMapper {
     private StateRepository stateRepository;
 
     @Autowired
+    private CityRepository cityRepository;
+
+    @Autowired
     private DesignationRepository designationRepository;
 
     @Autowired
@@ -57,33 +67,37 @@ public class FundProfileMapper {
                 .fundMode(request.getFundMode())
                 .fundClass(request.getFundClass())
                 .purpose(request.getPurpose())
-                .programmeTied(request.getProgrammeTied())
+                // The on/off flags are NOT NULL; a flag left out of the JSON is off
+                // (@Builder.Default doesn't apply to deserialised requests).
+                .programmeTied(Boolean.TRUE.equals(request.getProgrammeTied()))
                 .reportingFrequency(request.getReportingFrequency())
-                .movementAllowed(request.getMovementAllowed())
-                .explanationRequired(request.getExplanationRequired())
-                .onboardingComplete(request.getOnboardingComplete())
+                .movementAllowed(Boolean.TRUE.equals(request.getMovementAllowed()))
+                .explanationRequired(Boolean.TRUE.equals(request.getExplanationRequired()))
+                .onboardingComplete(Boolean.TRUE.equals(request.getOnboardingComplete()))
                 .build();
         applyChildren(request, profile);
         return profile;
     }
 
-    /** Update an existing entity's scalar fields and fully replace its child collections. */
+    /**
+     * Update an existing entity's scalar fields and its children. Geographies and
+     * utilisation rules are replaced; disbursement rules and their tranches are
+     * merged by id, so a tranche that is kept keeps its id and code — credit notes
+     * point at tranches by id (credit_note.tranche_ref).
+     */
     public void updateEntity(CreateFundProfileRequest request, DonorFundProfile profile) {
         profile.setFundMode(request.getFundMode());
         profile.setFundClass(request.getFundClass());
         profile.setPurpose(request.getPurpose());
-        profile.setProgrammeTied(request.getProgrammeTied());
+        profile.setProgrammeTied(Boolean.TRUE.equals(request.getProgrammeTied()));
         profile.setReportingFrequency(request.getReportingFrequency());
-        profile.setMovementAllowed(request.getMovementAllowed());
-        profile.setExplanationRequired(request.getExplanationRequired());
-        profile.setOnboardingComplete(request.getOnboardingComplete());
+        profile.setMovementAllowed(Boolean.TRUE.equals(request.getMovementAllowed()));
+        profile.setExplanationRequired(Boolean.TRUE.equals(request.getExplanationRequired()));
+        profile.setOnboardingComplete(Boolean.TRUE.equals(request.getOnboardingComplete()));
 
-        // orphanRemoval on the collections deletes rows dropped from these lists;
-        // disbursementRules' own orphanRemoval cascades through to their tranche
-        // criteria, so clearing it here is enough to drop both levels.
+        // orphanRemoval deletes the rows dropped from these lists.
         profile.getGeographies().clear();
         profile.getUtilisationRules().clear();
-        profile.getDisbursementRules().clear();
         applyChildren(request, profile);
     }
 
@@ -92,9 +106,12 @@ public class FundProfileMapper {
             for (CreateFundProfileRequest.GeographyItem g : request.getGeographies()) {
                 StateMaster state = stateRepository.findById(g.getStateId())
                         .orElseThrow(() -> new ResourceNotFoundException("State", g.getStateId()));
+                CityMaster city = g.getCityId() == null ? null : cityRepository.findById(g.getCityId())
+                        .orElseThrow(() -> new ResourceNotFoundException("City", g.getCityId()));
                 profile.getGeographies().add(SpendableGeography.builder()
                         .fundProfile(profile)
                         .state(state)
+                        .city(city)
                         .build());
             }
         }
@@ -109,53 +126,130 @@ public class FundProfileMapper {
                         .build());
             }
         }
-        if (request.getDisbursementRules() != null) {
-            for (CreateFundProfileRequest.DisbursementRuleItem d : request.getDisbursementRules()) {
-                DonorDisbursementRule rule = DonorDisbursementRule.builder()
-                        .fundProfile(profile)
-                        .totalAmount(d.getTotalAmount())
-                        .disbursementType(d.getDisbursementType())
-                        .receivingDate(d.getReceivingDate())
-                        .build();
-                if (d.getTrancheCriteria() != null) {
-                    for (CreateFundProfileRequest.TrancheCriterionItem c : d.getTrancheCriteria()) {
-                        DonorTrancheCriterion criterion = new DonorTrancheCriterion();
-                        criterion.setDonorDisbursementRule(rule);
-                        criterion.setAmountCriteria(c.getAmountCriteria());
-                        criterion.setExpectedReleaseDate(c.getExpectedReleaseDate());
-                        criterion.setFrequency(c.getFrequency());
-                        criterion.setIsFinalTranche(c.getIsFinalTranche());
+        mergeDisbursementRules(request, profile);
+    }
 
-                        if (c.getCriteria() != null) {
-                            for (CreateFundProfileRequest.ReleaseCriterionItem rc : c.getCriteria()) {
-                                DonorReleaseCriteria releaseCriteria = new DonorReleaseCriteria();
-                                releaseCriteria.setDonorTrancheCriterion(criterion);
-                                releaseCriteria.setReleaseCriteria(rc.getReleaseCriteria());
-                                releaseCriteria.setReleaseDate(rc.getReleaseDate());
-                                releaseCriteria.setMilestoneName(rc.getMilestoneName());
-                                releaseCriteria.setVerificationSignOffRole(
-                                        resolveDesignation(rc.getVerificationSignOffRoleId()));
-                                releaseCriteria.setOtherVerificationSignOffRole(rc.getOtherVerificationSignOffRole());
-                                releaseCriteria.setTargetDate(rc.getTargetDate());
-                                releaseCriteria.setUtilisationPercentage(rc.getUtilisationPercentage());
-                                releaseCriteria.setTriggerBasis(rc.getTriggerBasis());
-                                releaseCriteria.setDescription(rc.getDescription());
-                                releaseCriteria.setRemindSomeone(rc.getRemindSomeone());
-                                releaseCriteria.setResponsibleRole(resolveDesignation(rc.getResponsibleRoleId()));
-                                releaseCriteria.setOtherResponsibleRole(rc.getOtherResponsibleRole());
-                                releaseCriteria.setReminderLeadTime(rc.getReminderLeadTime());
-                                releaseCriteria.setRepeatReminder(rc.getRepeatReminder());
-                                releaseCriteria.setEscalateToDeputy(rc.getEscalateToDeputy());
-                                criterion.getDonorReleaseCriteria().add(releaseCriteria);
-                            }
-                        }
+    /**
+     * Rules and tranches sent with an id that the profile already has are
+     * updated in place; ones without an id (or an unknown one) are added; the
+     * profile's ones not sent are removed. New tranches get their code from
+     * DonorFundProfile.assignTrancheCodes once the profile code is known.
+     */
+    private void mergeDisbursementRules(CreateFundProfileRequest request, DonorFundProfile profile) {
+        List<CreateFundProfileRequest.DisbursementRuleItem> items =
+                request.getDisbursementRules() == null ? List.of() : request.getDisbursementRules();
+        Map<Long, DonorDisbursementRule> existing = new HashMap<>();
+        for (DonorDisbursementRule rule : profile.getDisbursementRules()) {
+            if (rule.getId() != null) {
+                existing.put(rule.getId(), rule);
+            }
+        }
 
-                        rule.getDonorTrancheCriteria().add(criterion);
-                    }
-                }
+        List<DonorDisbursementRule> kept = new ArrayList<>();
+        for (CreateFundProfileRequest.DisbursementRuleItem d : items) {
+            DonorDisbursementRule rule = d.getId() != null ? existing.get(d.getId()) : null;
+            if (rule == null) {
+                rule = DonorDisbursementRule.builder().fundProfile(profile).build();
+            }
+            rule.setTotalAmount(d.getTotalAmount());
+            rule.setDisbursementType(d.getDisbursementType());
+            rule.setReceivingDate(d.getReceivingDate());
+            rule.setForeignContribution(toForeignAmount(d));
+            mergeTranches(d, rule);
+            kept.add(rule);
+        }
+
+        profile.getDisbursementRules().removeIf(rule -> kept.stream().noneMatch(k -> k == rule));
+        for (DonorDisbursementRule rule : kept) {
+            if (profile.getDisbursementRules().stream().noneMatch(r -> r == rule)) {
                 profile.getDisbursementRules().add(rule);
             }
         }
+    }
+
+    private void mergeTranches(CreateFundProfileRequest.DisbursementRuleItem d, DonorDisbursementRule rule) {
+        boolean foreign = rule.getForeignContribution() != null;
+        Map<Long, DonorTrancheCriterion> existing = new HashMap<>();
+        for (DonorTrancheCriterion tranche : rule.getDonorTrancheCriteria()) {
+            if (tranche.getId() != null) {
+                existing.put(tranche.getId(), tranche);
+            }
+        }
+
+        List<DonorTrancheCriterion> kept = new ArrayList<>();
+        List<CreateFundProfileRequest.TrancheCriterionItem> items =
+                d.getTrancheCriteria() == null ? List.of() : d.getTrancheCriteria();
+        for (CreateFundProfileRequest.TrancheCriterionItem c : items) {
+            DonorTrancheCriterion criterion = c.getId() != null ? existing.get(c.getId()) : null;
+            if (criterion == null) {
+                criterion = new DonorTrancheCriterion();
+                criterion.setDonorDisbursementRule(rule);
+            }
+            criterion.setAmountCriteria(c.getAmountCriteria());
+            // A foreign tranche amount only means something on an FC commitment.
+            criterion.setForeignAmount(foreign ? c.getForeignAmount() : null);
+            criterion.setExpectedReleaseDate(c.getExpectedReleaseDate());
+            // frequency is optional on the wire; @Builder.Default doesn't apply when
+            // the request comes from JSON, so default it here (column is NOT NULL).
+            criterion.setFrequency(c.getFrequency() != null ? c.getFrequency() : ScheduleType.MONTHLY);
+            criterion.setIsFinalTranche(c.getIsFinalTranche());
+
+            // Release criteria have no outside references: replace them.
+            criterion.getDonorReleaseCriteria().clear();
+            if (c.getCriteria() != null) {
+                for (CreateFundProfileRequest.ReleaseCriterionItem rc : c.getCriteria()) {
+                    criterion.getDonorReleaseCriteria().add(toReleaseCriteria(rc, criterion));
+                }
+            }
+            kept.add(criterion);
+        }
+
+        rule.getDonorTrancheCriteria().removeIf(t -> kept.stream().noneMatch(k -> k == t));
+        for (DonorTrancheCriterion tranche : kept) {
+            if (rule.getDonorTrancheCriteria().stream().noneMatch(t -> t == tranche)) {
+                rule.getDonorTrancheCriteria().add(tranche);
+            }
+        }
+    }
+
+    private DonorReleaseCriteria toReleaseCriteria(CreateFundProfileRequest.ReleaseCriterionItem rc,
+            DonorTrancheCriterion criterion) {
+        DonorReleaseCriteria releaseCriteria = new DonorReleaseCriteria();
+        releaseCriteria.setDonorTrancheCriterion(criterion);
+        releaseCriteria.setReleaseCriteria(rc.getReleaseCriteria());
+        releaseCriteria.setReleaseDate(rc.getReleaseDate());
+        releaseCriteria.setMilestoneName(rc.getMilestoneName());
+        releaseCriteria.setVerificationSignOffRole(resolveDesignation(rc.getVerificationSignOffRoleId()));
+        releaseCriteria.setOtherVerificationSignOffRole(rc.getOtherVerificationSignOffRole());
+        releaseCriteria.setTargetDate(rc.getTargetDate());
+        releaseCriteria.setUtilisationPercentage(rc.getUtilisationPercentage());
+        releaseCriteria.setTriggerBasis(rc.getTriggerBasis());
+        releaseCriteria.setDescription(rc.getDescription());
+        releaseCriteria.setRemindSomeone(rc.getRemindSomeone());
+        releaseCriteria.setResponsibleRole(resolveDesignation(rc.getResponsibleRoleId()));
+        releaseCriteria.setOtherResponsibleRole(rc.getOtherResponsibleRole());
+        releaseCriteria.setReminderLeadTime(rc.getReminderLeadTime());
+        releaseCriteria.setRepeatReminder(rc.getRepeatReminder());
+        releaseCriteria.setEscalateToDeputy(rc.getEscalateToDeputy());
+        return releaseCriteria;
+    }
+
+    /**
+     * The FC block as one value, or null for an INR commitment. Null when no FC
+     * field is sent; when only some are, the validator has already rejected it.
+     */
+    private ForeignAmount toForeignAmount(CreateFundProfileRequest.DisbursementRuleItem d) {
+        if (d.getCurrency() == null && d.getForeignAmount() == null && d.getFxRate() == null
+                && d.getFxRateDate() == null && d.getFxRateSource() == null) {
+            return null;
+        }
+        return ForeignAmount.builder()
+                .currency(d.getCurrency() != null ? d.getCurrency().trim().toUpperCase() : null)
+                .foreignAmount(d.getForeignAmount())
+                .fxRate(d.getFxRate())
+                .fxRateDate(d.getFxRateDate())
+                .fxRateSource(d.getFxRateSource())
+                .build();
     }
 
     public FundProfileResponse toResponse(DonorFundProfile p) {
@@ -165,6 +259,8 @@ public class FundProfileMapper {
                         .stateId(g.getState() != null ? g.getState().getId() : null)
                         .stateName(g.getState() != null ? g.getState().getStateName() : null)
                         .stateCode(g.getState() != null ? g.getState().getStateCode() : null)
+                        .cityId(g.getCity() != null ? g.getCity().getId() : null)
+                        .cityName(g.getCity() != null ? g.getCity().getCityName() : null)
                         .build())
                 .toList();
 
@@ -237,6 +333,7 @@ public class FundProfileMapper {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal unallocated = d.getTotalAmount() != null ? d.getTotalAmount().subtract(allocated) : null;
 
+        ForeignAmount fc = d.getForeignContribution();
         return FundProfileResponse.DisbursementRuleItem.builder()
                 .id(d.getId())
                 .totalAmount(d.getTotalAmount())
@@ -244,6 +341,13 @@ public class FundProfileMapper {
                 .disbursementTypeLabel(
                         d.getDisbursementType() != null ? d.getDisbursementType().getLabel() : null)
                 .receivingDate(d.getReceivingDate())
+                .foreign(fc != null)
+                .currency(fc != null ? fc.getCurrency() : null)
+                .foreignAmount(fc != null ? fc.getForeignAmount() : null)
+                .fxRate(fc != null ? fc.getFxRate() : null)
+                .fxRateDate(fc != null ? fc.getFxRateDate() : null)
+                .fxRateSource(fc != null && fc.getFxRateSource() != null ? fc.getFxRateSource().name() : null)
+                .fxRateSourceLabel(fc != null && fc.getFxRateSource() != null ? fc.getFxRateSource().getLabel() : null)
                 .trancheCriteria(criteria)
                 .allocatedAmount(allocated)
                 .unallocatedAmount(unallocated)
@@ -258,7 +362,9 @@ public class FundProfileMapper {
 
         return FundProfileResponse.TrancheCriterionItem.builder()
                 .id(c.getId())
+                .trancheCode(c.getTrancheCode())
                 .amountCriteria(c.getAmountCriteria())
+                .foreignAmount(c.getForeignAmount())
                 .expectedReleaseDate(c.getExpectedReleaseDate())
                 .frequency(c.getFrequency() != null ? c.getFrequency().name() : null)
                 .frequencyLabel(c.getFrequency() != null ? c.getFrequency().getLabel() : null)

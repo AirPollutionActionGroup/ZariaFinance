@@ -43,9 +43,10 @@ export function validateBudget(draft) {
 
   if (!draft.name?.trim()) header.name = 'Budget name is required';
   if (!draft.financialYear) header.financialYear = 'Select a financial year';
-  if (!BUDGET_TYPE[draft.budgetType]) header.budgetType = 'Choose programme-based or organisation-based';
+  if (!BUDGET_TYPE[draft.budgetType]) header.budgetType = 'Choose programme-, project- or organisation-based';
   // A programme budget must name its programme; an organisation budget is org-wide unless a department is picked.
   if (draft.budgetType === 'PROGRAMME' && !draft.programme?.trim()) header.programme = 'Select the programme';
+  if (draft.budgetType === 'PROJECT' && !draft.programme?.trim()) header.programme = 'Select the project';
 
   if (!draft.lines?.length) {
     form = 'Add at least one budget line';

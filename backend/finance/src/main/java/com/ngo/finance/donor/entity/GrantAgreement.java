@@ -33,8 +33,13 @@ import lombok.ToString;
 @ToString(exclude = { "donor", "fundProfile" })
 public class GrantAgreement extends AuditEntity {
 
-        @Column(nullable = false, unique = true, length = 20)
+        /** GA-{financial year}-{nnn}, e.g. GA-2026-27-021 (see GrantServiceImpl#resolveGrantCode). */
+        @Column(nullable = false, unique = true, length = 40)
         private String grantCode;
+
+        /** The number before the GA-{FY}-{nnn} format (e.g. ZRY/GA/2026/021) — kept so signed paper and searches still match. */
+        @Column(name = "legacy_code", length = 40)
+        private String legacyCode;
 
         @ManyToOne
         @JoinColumn(name = "donor_id", nullable = false, foreignKey = @ForeignKey(name = "fk_grant_donor"))
@@ -42,7 +47,7 @@ public class GrantAgreement extends AuditEntity {
 
         // The fund profile this grant inherits (donor, programme, class A/B/C, rules).
         @ManyToOne
-        @JoinColumn(name = "fund_profile_id", foreignKey = @ForeignKey(name = "fk_grant_fund_profile"))
+        @JoinColumn(name = "fund_profile_id", nullable = false, foreignKey = @ForeignKey(name = "fk_grant_fund_profile"))
         private DonorFundProfile fundProfile;
 
         @Column(nullable = false, length = 255)

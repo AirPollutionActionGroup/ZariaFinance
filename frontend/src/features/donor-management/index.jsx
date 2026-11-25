@@ -1,20 +1,15 @@
 import VolunteerActivismOutlinedIcon from '@mui/icons-material/VolunteerActivismOutlined';
-import HandshakeOutlinedIcon from '@mui/icons-material/HandshakeOutlined';
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import GroupsOutlinedIcon from '@mui/icons-material/GroupsOutlined';
 import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
 import { DonorsListPage } from './pages/DonorsListPage.jsx';
+import { DonorImportPage } from './pages/DonorImportPage.jsx';
 import { DonorCreatePage } from './pages/DonorCreatePage.jsx';
 import { DonorDetailPage } from './pages/DonorDetailPage.jsx';
 import { DonorEditPage } from './pages/DonorEditPage.jsx';
-import { GrantsListPage } from './pages/GrantsListPage.jsx';
-import { GrantCreatePage } from './pages/GrantCreatePage.jsx';
-import { GrantDetailPage } from './pages/GrantDetailPage.jsx';
-import { GrantEditPage } from './pages/GrantEditPage.jsx';
-import { FundProfileFormPage } from './pages/FundProfileFormPage.jsx';
-import { FundProfilesListPage } from './pages/FundProfilesListPage.jsx';
-import { FundProfileDetailPage } from './pages/FundProfileDetailPage.jsx';
-import RuleOutlinedIcon from '@mui/icons-material/RuleOutlined';
+import { useFundingRecords } from '../funding-agreements/hooks/useFunding.js';
+import { LoadingState } from '../../shared/components/index.js';
+import { Navigate, useParams } from 'react-router-dom';
 import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
 import { FundingListPage } from '../funding-agreements/pages/FundingListPage.jsx';
 import { FundingDetailPage } from '../funding-agreements/pages/FundingDetailPage.jsx';
@@ -23,9 +18,6 @@ import { ReportsPage } from './pages/ReportsPage.jsx';
 import { ProgrammesListPage } from './pages/ProgrammesListPage.jsx';
 import { ProgrammeCreatePage } from './pages/ProgrammeCreatePage.jsx';
 import { ProgrammeDetailPage } from './pages/ProgrammeDetailPage.jsx';
-import { DonationsListPage } from '../donation-management/pages/DonationsListPage.jsx';
-import { DonationCreatePage } from '../donation-management/pages/DonationCreatePage.jsx';
-import { DonationDetailPage } from '../donation-management/pages/DonationDetailPage.jsx';
 import { UserRequestsListPage } from '../user-requests/pages/UserRequestsListPage.jsx';
 import { UserRequestDetailPage } from '../user-requests/pages/UserRequestDetailPage.jsx';
 import { OrganisationRegisterListPage } from '../organisation-register/pages/OrganisationRegisterListPage.jsx';
@@ -72,31 +64,47 @@ import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
 import { DebitNotesPage } from '../debit-notes/pages/DebitNotesPage.jsx';
 import { DebitNoteDetailPage } from '../debit-notes/pages/DebitNoteDetailPage.jsx';
 import { DebitNoteCreatePage } from '../debit-notes/pages/DebitNoteCreatePage.jsx';
+import { DebitNoteImportPage } from '../debit-notes/pages/DebitNoteImportPage.jsx';
 import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import { CreditNotesPage } from '../credit-notes/pages/CreditNotesPage.jsx';
 import { CreditNoteDetailPage } from '../credit-notes/pages/CreditNoteDetailPage.jsx';
 import { CreditNoteCreatePage } from '../credit-notes/pages/CreditNoteCreatePage.jsx';
+import { CreditNoteImportPage } from '../credit-notes/pages/CreditNoteImportPage.jsx';
 import AssignmentReturnOutlinedIcon from '@mui/icons-material/AssignmentReturnOutlined';
 
 /**
  * Donor Management module definition — registered in app/modules.js.
  */
+/** Old /grants/:id URLs → the funding record of the agreement's fund profile. */
+function GrantToFunding({ edit = false }) {
+  const { id } = useParams();
+  const { records, isPending } = useFundingRecords();
+  if (isPending) return <LoadingState label="Opening funding…" />;
+  const profileId = records.find((r) => String(r.grantId) === String(id))?.profileId;
+  if (!profileId) return <Navigate to="/funding" replace />;
+  return <Navigate to={`/funding/${profileId}${edit ? '/edit' : ''}`} replace />;
+}
+
+/** Old /fund-profiles URLs → the same record under /funding (a funding record's id is its fund profile id). */
+function ToFunding({ edit = false }) {
+  const { id, donorId } = useParams();
+  if (donorId) return <Navigate to={`/funding/new?donorId=${donorId}`} replace />;
+  return <Navigate to={`/funding/${id}${edit ? '/edit' : ''}`} replace />;
+}
+
 export const donorManagementModule = {
   id: MODULE_ID,
   title: 'Donor Management',
   navSection: 'CORE LAYERS',
   navItems: [
-    { label: 'Donors Registry', path: '/donors', icon: VolunteerActivismOutlinedIcon, section: 'DONOR & GRANTS' },
-    { label: 'Programmes', path: '/programmes', icon: CategoryOutlinedIcon, section: 'DONOR & GRANTS' },
-    // Funding Agreements (below) combines a fund profile and its grant agreement in one record and form;
-    // the separate Fund Profiles / Grants Agreements registers remain available.
-    { label: 'Fund Profiles', path: '/fund-profiles', icon: RuleOutlinedIcon, section: 'DONOR & GRANTS' },
-    { label: 'Grants Agreements', path: '/grants', icon: HandshakeOutlinedIcon, section: 'DONOR & GRANTS' },
-    //{ label: 'Donations', path: '/donations', icon: VolunteerActivismOutlinedIcon, section: 'DONOR & GRANTS' },
-    { label: 'Funding Agreements', path: '/funding', icon: AccountBalanceWalletOutlinedIcon, section: 'DONOR & GRANTS' },
     //{ label: 'User Requests', path: '/user-requests', icon: PersonAddOutlinedIcon, section: 'DONOR & GRANTS' },
     //{ label: 'organization Register', path: '/organisation-register', icon: BusinessIcon, section: 'MASTERS' },
     //{ label: 'Role Directory', path: '/role-directory', icon: GroupsOutlinedIcon, section: 'MASTERS' },
+    
+    { label: 'Donors Registry', path: '/donors', icon: VolunteerActivismOutlinedIcon, section: 'DONOR & GRANTS' },
+    { label: 'Funding Agreements', path: '/funding', icon: AccountBalanceWalletOutlinedIcon, section: 'DONOR & GRANTS' },
+    { label: 'Programmes', path: '/programmes', icon: CategoryOutlinedIcon, section: 'DONOR & GRANTS' },
+
     { label: 'Employee List', path: '/employee-list', icon: BadgeOutlinedIcon, section: 'EMPLOYEES' },
     { label: 'Employee Allocation', path: '/employee-allocation', icon: AssignmentIndOutlinedIcon, section: 'EMPLOYEES' },
     { label: 'Master', path: '/masters', icon: StorageOutlinedIcon, section: 'MASTERS' },
@@ -115,19 +123,19 @@ export const donorManagementModule = {
   routes: [
     { path: '/donors', element: <DonorsListPage /> },
     { path: '/donors/new', element: <DonorCreatePage /> },
+    { path: '/donors/import', element: <DonorImportPage /> },
     { path: '/donors/:id', element: <DonorDetailPage /> },
     { path: '/donors/:id/edit', element: <DonorEditPage /> },
-    { path: '/donors/:donorId/fund-profiles/new', element: <FundProfileFormPage /> },
-    { path: '/fund-profiles', element: <FundProfilesListPage /> },
-    { path: '/fund-profiles/:id', element: <FundProfileDetailPage /> },
-    { path: '/fund-profiles/:id/edit', element: <FundProfileFormPage /> },
-    { path: '/grants', element: <GrantsListPage /> },
-    { path: '/grants/new', element: <GrantCreatePage /> },
-    { path: '/grants/:id', element: <GrantDetailPage /> },
-    { path: '/grants/:id/edit', element: <GrantEditPage /> },
-    { path: '/donations', element: <DonationsListPage /> },
-    { path: '/donations/new', element: <DonationCreatePage /> },
-    { path: '/donations/:id', element: <DonationDetailPage /> },
+    // The old Fund Profile pages were removed; their URLs lead to the same record under /funding.
+    { path: '/donors/:donorId/fund-profiles/new', element: <ToFunding /> },
+    { path: '/fund-profiles', element: <Navigate to="/funding" replace /> },
+    { path: '/fund-profiles/:id', element: <ToFunding /> },
+    { path: '/fund-profiles/:id/edit', element: <ToFunding edit /> },
+    // The old Grant Agreement pages were removed too; their URLs lead to the agreement's funding record.
+    { path: '/grants', element: <Navigate to="/funding" replace /> },
+    { path: '/grants/new', element: <Navigate to="/funding/new" replace /> },
+    { path: '/grants/:id', element: <GrantToFunding /> },
+    { path: '/grants/:id/edit', element: <GrantToFunding edit /> },
     { path: '/programmes', element: <ProgrammesListPage /> },
     { path: '/programmes/new', element: <ProgrammeCreatePage /> },
     { path: '/programmes/:id', element: <ProgrammeDetailPage /> },
@@ -166,9 +174,11 @@ export const donorManagementModule = {
     { path: '/outflow-budget/:id', element: <OutflowDetailPage /> },
     { path: '/debit-notes', element: <DebitNotesPage /> },
     { path: '/debit-notes/new', element: <DebitNoteCreatePage /> },
+    { path: '/debit-notes/import', element: <DebitNoteImportPage /> },
     { path: '/debit-notes/:id', element: <DebitNoteDetailPage /> },
     { path: '/credit-notes', element: <CreditNotesPage /> },
     { path: '/credit-notes/new', element: <CreditNoteCreatePage /> },
+    { path: '/credit-notes/import', element: <CreditNoteImportPage /> },
     { path: '/credit-notes/:id', element: <CreditNoteDetailPage /> },
     { path: '/funding', element: <FundingListPage /> },
     { path: '/funding/new', element: <FundingFormPage mode="new" /> },

@@ -36,3 +36,18 @@ export function useCreateDebitNote() {
     onSuccess: invalidate,
   });
 }
+
+/** Check (dryRun) or import CSV rows. Caches are refreshed only after a real import. */
+export function useImportDebitNotes() {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateNotesAndOutflow();
+  return useMutation({
+    mutationFn: (payload) => debitNoteApi.importRows(payload),
+    onSuccess: (data) => {
+      if (data?.dryRun) return;
+      invalidate();
+      // Debits charged to a fund change its balance on the funding records.
+      queryClient.invalidateQueries({ queryKey: queryKeys.funding.all() });
+    },
+  });
+}

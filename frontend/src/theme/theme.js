@@ -9,6 +9,9 @@ import { palettes, SERIF, SANS } from './palette.js';
 
 export { SERIF, SANS };
 
+/** Button colours that carry meaning and so keep their own colour (see MuiButton below). */
+const SEMANTIC = ['success', 'error', 'warning', 'info'];
+
 export function createAppTheme(mode = 'light') {
   const c = palettes[mode] || palettes.light;
   const isDark = mode === 'dark';
@@ -65,16 +68,24 @@ export function createAppTheme(mode = 'light') {
         defaultProps: { disableElevation: true },
         styleOverrides: {
           root: { borderRadius: 8, paddingInline: 16, fontSize: 12.5 },
-          contained: {
-            backgroundColor: c.dark,
-            color: c.darkInk,
-            '&:hover': { backgroundColor: c.dark, opacity: 0.9 },
-          },
-          outlined: {
-            borderColor: c.line,
-            color: c.ink,
-            '&:hover': { borderColor: c.ink, backgroundColor: c.card2 },
-          },
+          // The house style (dark fill / quiet outline) is for ordinary buttons. A button that asks for
+          // a meaning colour — success (Approve), error (Reject, Delete), warning, info — keeps it.
+          contained: ({ ownerState }) =>
+            SEMANTIC.includes(ownerState.color)
+              ? { '&:hover': { opacity: 0.9 } }
+              : {
+                  backgroundColor: c.dark,
+                  color: c.darkInk,
+                  '&:hover': { backgroundColor: c.dark, opacity: 0.9 },
+                },
+          outlined: ({ ownerState }) =>
+            SEMANTIC.includes(ownerState.color)
+              ? {}
+              : {
+                  borderColor: c.line,
+                  color: c.ink,
+                  '&:hover': { borderColor: c.ink, backgroundColor: c.card2 },
+                },
         },
       },
       MuiPaper: {

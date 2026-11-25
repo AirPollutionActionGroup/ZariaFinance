@@ -11,32 +11,44 @@ import {
   TableFooter,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
+import PlaceOutlinedIcon from '@mui/icons-material/PlaceOutlined';
+import LabelOutlinedIcon from '@mui/icons-material/LabelOutlined';
+import AccountBalanceWalletOutlinedIcon from '@mui/icons-material/AccountBalanceWalletOutlined';
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ErrorState, LoadingState, PageHeader, StatusChip } from '../../../shared/components/index.js';
+import { ErrorState, LoadingState, RecordHeader, StatStrip, StatusChip } from '../../../shared/components/index.js';
 import { formatInrExact } from '../../../lib/format/currency.js';
 import { formatDate } from '../../../lib/format/date.js';
-import { BOOK_TONE } from '../../donation-management/constants.js';
-import { BUDGET_TYPE, BUDGET_TYPE_TONE } from '../../budget/constants.js';
+import { BOOK } from '../../../shared/constants/book.js';
+import { BUDGET_TYPE } from '../../budget/constants.js';
+import { BUDGET_TYPE_ICON } from '../../budget/components/budgetTypeIcons.js';
 import { useOutflowRow } from '../hooks/useOutflow.js';
 import { useDebitNotes } from '../../debit-notes/hooks/useDebitNotes.js';
-import { reasonLabel } from '../../debit-notes/constants.js';
 import { PAYMENT_STATUS, PAYMENT_STATUS_TONE } from '../constants.js';
 
 const MONEY_SX = { fontVariantNumeric: 'tabular-nums' };
+const DAY = 24 * 60 * 60 * 1000;
+const SMALL_CAPS = { fontSize: 10.5, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'text.secondary' };
+const STATUS_COLOR = { OVERDUE: 'error.main', PENDING: 'warning.main', PAID: 'success.main' };
 
-function SectionCard({ title, action, children }) {
+/** Whole days since `date` (0 if it hasn't passed). */
+const daysPast = (date) => (date ? Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / DAY)) : 0);
+
+function SectionCard({ title, aside, children }) {
   return (
-    <Card sx={{ mb: 3 }}>
-      <CardContent sx={{ p: 3 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-          <Typography variant="h4" component="h2">
+    <Card>
+      <CardContent sx={{ px: 2.5, py: 2, '&:last-child': { pb: 2.25 } }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.75, gap: 1 }}>
+          <Typography variant="h6" component="h2" sx={{ fontWeight: 700 }}>
             {title}
           </Typography>
-          {action}
+          {aside}
         </Stack>
         {children}
       </CardContent>
@@ -44,145 +56,91 @@ function SectionCard({ title, action, children }) {
   );
 }
 
-/** Small uppercase label over a value — the budget line facts grid. */
-function Fact({ label, children }) {
+/** Label / value row of the facts card. */
+function FactRow({ label, children }) {
   return (
-    <Box sx={{ minWidth: 0 }}>
-      <Typography
-        variant="caption"
-        component="p"
-        sx={{ textTransform: 'uppercase', letterSpacing: '0.08em', color: 'text.secondary', mb: 0.5 }}
-      >
-        {label}
+    <Stack direction="row" justifyContent="space-between" spacing={2} sx={{ py: 1, borderBottom: '1px solid var(--line2)', '&:last-of-type': { borderBottom: 'none' } }}>
+      <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>{label}</Typography>
+      <Typography variant="body2" component="div" sx={{ fontWeight: 600, textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>
+        {children}
       </Typography>
-      {typeof children === 'string' || typeof children === 'number' ? (
-        <Typography variant="body1">{children}</Typography>
-      ) : (
-        children
-      )}
+    </Stack>
+  );
+}
+
+/** Spend meter under the KPI strip: how much of the budgeted amount is used, with a budget marker when overspent. */
+function UsageBar({ budget, spent }) {
+  const over = spent > budget;
+  const scale = Math.max(budget, spent, 1);
+  const pctOf = (v) => `${Math.min(100, Math.max(0, (v / scale) * 100))}%`;
+  const used = budget > 0 ? Math.round((spent / budget) * 100) : 0;
+  return (
+    <Box sx={{ px: 2.5, py: 1.5, borderTop: '1px solid', borderColor: 'divider', bgcolor: over ? 'var(--err-bg)' : 'transparent' }}>
+      <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.75 }}>
+        <Typography variant="caption" sx={{ fontWeight: 700 }}>{over ? 'Over budget' : 'Used'}</Typography>
+        <Typography variant="caption" sx={{ ...MONEY_SX, fontWeight: 700, color: over ? 'error.main' : 'text.primary' }}>
+          {used}% of budget
+        </Typography>
+      </Stack>
+      <Box sx={{ position: 'relative', height: 8, borderRadius: 4, bgcolor: 'var(--line2)', overflow: 'hidden' }}>
+        <Box sx={{ height: '100%', width: pctOf(spent), bgcolor: over ? 'var(--err)' : 'var(--ink)', borderRadius: 4, transition: 'width .3s ease' }} />
+        {over ? <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: pctOf(budget), width: 2, bgcolor: 'background.paper' }} /> : null}
+      </Box>
     </Box>
   );
 }
 
-/** Budgeted / Spent / Remaining across the page, with a spend meter that marks the budget line when overspent. */
-function SpendingSummary({ row, noteCount }) {
-  const budget = Number(row.expectedAmount) || 0;
-  const spent = Number(row.spent) || 0;
-  const over = row.remaining < 0;
-  const scale = Math.max(budget, spent, 1);
-  const pctOf = (v) => `${Math.min(100, Math.max(0, (v / scale) * 100))}%`;
-  const usedPct = budget > 0 ? Math.round((spent / budget) * 100) : 0;
-
-  const tiles = [
-    { label: 'Budgeted', value: formatInrExact(budget), sub: `${row.quarterLabel} · due by ${formatDate(row.expectedDate)}`, accent: 'text.secondary' },
-    {
-      label: 'Spent',
-      value: spent ? formatInrExact(spent) : '—',
-      sub: noteCount ? `${noteCount} debit ${noteCount === 1 ? 'note' : 'notes'}` : 'no debit notes yet',
-      accent: 'error.main',
-      color: spent ? 'error.main' : 'text.secondary',
-    },
-    {
-      label: over ? 'Over budget' : 'Remaining',
-      value: formatInrExact(Math.abs(row.remaining)),
-      sub: over ? 'spent more than budgeted' : row.remaining === 0 ? 'fully spent' : 'still available on this line',
-      accent: over ? 'error.main' : 'success.main',
-      color: over ? 'error.main' : 'success.main',
-    },
-  ];
-
-  return (
-    <Card sx={{ mb: 3, overflow: 'hidden' }}>
-      <Stack direction={{ xs: 'column', md: 'row' }}>
-        {tiles.map((t, i) => (
-          <Box
-            key={t.label}
-            sx={{
-              position: 'relative',
-              flex: 1,
-              p: 2.5,
-              pl: 3,
-              borderRight: { md: i < tiles.length - 1 ? '1px solid' : 'none' },
-              borderBottom: { xs: i < tiles.length - 1 ? '1px solid' : 'none', md: 'none' },
-              borderColor: 'divider',
-            }}
-          >
-            <Box sx={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, bgcolor: t.accent }} />
-            <Typography variant="caption" sx={{ textTransform: 'uppercase', letterSpacing: '0.09em', color: 'text.secondary', fontWeight: 600 }}>
-              {t.label}
-            </Typography>
-            <Typography sx={{ ...MONEY_SX, fontSize: 26, fontWeight: 700, color: t.color }}>{t.value}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              {t.sub}
-            </Typography>
-          </Box>
-        ))}
-      </Stack>
-      <Box sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider', bgcolor: over ? 'var(--warn-bg)' : 'var(--card2)' }}>
-        <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.75 }}>
-          <Typography variant="caption" color={over ? 'warning.main' : 'text.secondary'}>
-            {over ? 'Over budget' : 'Used'}
-          </Typography>
-          <Typography variant="caption" sx={{ fontWeight: 700, color: over ? 'error.main' : 'text.primary' }}>
-            {usedPct}% of budget
-          </Typography>
-        </Stack>
-        <Box sx={{ position: 'relative', height: 6, borderRadius: 3, bgcolor: 'var(--line2)', overflow: 'hidden' }}>
-          <Box sx={{ height: '100%', width: pctOf(spent), bgcolor: 'error.main', borderRadius: 3, transition: 'width .3s ease' }} />
-          {over ? <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: pctOf(budget), width: 2, bgcolor: 'text.primary' }} /> : null}
-        </Box>
-      </Box>
-    </Card>
-  );
-}
-
 /** The debit notes raised against this row. */
-function DebitNotesTable({ notes, navigate }) {
+function DebitNotesTable({ notes, navigate, onAdd }) {
   if (!notes.length) {
     return (
-      <Box sx={{ py: 4, textAlign: 'center', border: '1px dashed', borderColor: 'divider', borderRadius: 2 }}>
-        <Typography variant="body1" sx={{ fontWeight: 600 }}>
-          Nothing spent yet
+      <Stack alignItems="center" spacing={1} sx={{ py: 4, px: 2, textAlign: 'center', border: '1px dashed', borderColor: 'divider', borderRadius: 2 }}>
+        <ReceiptLongOutlinedIcon sx={{ color: 'text.disabled', fontSize: 32 }} />
+        <Typography variant="body1" sx={{ fontWeight: 600 }}>Nothing spent yet</Typography>
+        <Typography variant="body2" color="text.secondary">
+          Raise a debit note when money goes out against this line — it adds to Spent here.
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Raise a Debit Note when money goes out against this line — it adds to Spent here.
-        </Typography>
-      </Box>
+        <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={onAdd} sx={{ mt: 1 }}>
+          Add debit note
+        </Button>
+      </Stack>
     );
   }
 
   const total = notes.reduce((sum, n) => sum + (Number(n.amount) || 0), 0);
   return (
-    <TableContainer sx={{ overflowX: 'auto' }}>
-      <Table size="small" sx={{ '& th': { color: 'text.secondary', fontWeight: 600, whiteSpace: 'nowrap' } }}>
+    <TableContainer sx={{ overflowX: 'auto', border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+      <Table size="small" sx={{ '& th': { ...SMALL_CAPS, whiteSpace: 'nowrap', bgcolor: 'var(--thead)' } }}>
         <TableHead>
           <TableRow>
             <TableCell>Debit note</TableCell>
-            <TableCell>Date</TableCell>
             <TableCell>Paid to</TableCell>
             <TableCell>Payment</TableCell>
-            <TableCell>Budget</TableCell>
             <TableCell align="right">Amount</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {notes.map((n) => (
             <TableRow key={n.id} hover onClick={() => navigate(`/debit-notes/${n.id}`)} sx={{ cursor: 'pointer' }}>
-              <TableCell sx={{ fontFamily: 'monospace', fontWeight: 700, color: 'primary.main' }}>{n.id}</TableCell>
-              <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(n.date)}</TableCell>
+              <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>{n.id}</Typography>
+                <Typography variant="caption" color="text.secondary">{formatDate(n.date)}</Typography>
+              </TableCell>
               <TableCell>
-                {n.payee?.name || '—'}
-                {n.remarks ? (
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                    {n.remarks}
-                  </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>{n.payee?.name || '—'}</Typography>
+                {n.remarks ? <Typography variant="caption" color="text.secondary">{n.remarks}</Typography> : null}
+              </TableCell>
+              <TableCell>
+                <Typography variant="body2" color="text.secondary">
+                  {[n.paymentMode?.name, n.reference].filter(Boolean).join(' · ') || '—'}
+                </Typography>
+                {n.reason ? (
+                  <Box sx={{ mt: 0.25 }}>
+                    <StatusChip label={`Over budget · ${n.reason}`} tone="warning" />
+                  </Box>
                 ) : null}
               </TableCell>
-              <TableCell sx={{ color: 'text.secondary' }}>{[n.paymentMode?.name, n.reference].filter(Boolean).join(' · ') || '—'}</TableCell>
-              <TableCell>
-                {n.reason ? <StatusChip label={`Over · ${reasonLabel(n.reason)}`} tone="warning" /> : <StatusChip label="Within budget" tone="neutral" />}
-              </TableCell>
-              <TableCell align="right" sx={{ ...MONEY_SX, fontWeight: 700, color: 'error.main' }}>
+              <TableCell align="right" sx={{ ...MONEY_SX, fontWeight: 700, whiteSpace: 'nowrap' }}>
                 {formatInrExact(n.amount)}
               </TableCell>
             </TableRow>
@@ -190,12 +148,10 @@ function DebitNotesTable({ notes, navigate }) {
         </TableBody>
         <TableFooter>
           <TableRow sx={{ '& td': { borderBottom: 'none', bgcolor: 'var(--card2)', color: 'text.primary', fontSize: 13 } }}>
-            <TableCell colSpan={5} sx={{ fontWeight: 600 }}>
+            <TableCell colSpan={3} sx={{ fontWeight: 600 }}>
               Total spent · {notes.length} {notes.length === 1 ? 'note' : 'notes'}
             </TableCell>
-            <TableCell align="right" sx={{ ...MONEY_SX, fontWeight: 700, color: 'error.main' }}>
-              {formatInrExact(total)}
-            </TableCell>
+            <TableCell align="right" sx={{ ...MONEY_SX, fontWeight: 700 }}>{formatInrExact(total)}</TableCell>
           </TableRow>
         </TableFooter>
       </Table>
@@ -212,8 +168,8 @@ export function OutflowDetailPage() {
   const row = rowQuery.data;
 
   const back = (
-    <Button startIcon={<ArrowBackIcon />} size="small" sx={{ mb: 2, color: 'text.secondary' }} onClick={() => navigate('/outflow-budget')}>
-      Outflow Budget
+    <Button startIcon={<ArrowBackIcon />} size="small" sx={{ mb: 1, color: 'text.secondary' }} onClick={() => navigate('/outflow-budget')}>
+      Outflow budget
     </Button>
   );
 
@@ -231,80 +187,121 @@ export function OutflowDetailPage() {
     .filter((n) => n.outflowLineId === row.id)
     .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
   const status = row.status;
+  const budget = Number(row.expectedAmount) || 0;
+  const spent = Number(row.spent) || 0;
+  const over = row.remaining < 0;
+  const late = status === 'OVERDUE' || status === 'PENDING' ? daysPast(row.expectedDate) : 0;
+  const TypeIcon = BUDGET_TYPE_ICON[row.budgetType] || BUDGET_TYPE_ICON.PROGRAMME;
+  const addNote = () => navigate(`/debit-notes/new?line=${row.id}`);
 
   return (
-    <>
-      {back}
-
-      <PageHeader
-        eyebrow={`${row.budgetCode} · ${row.lineCode} · ${row.quarterLabel}`}
+    <Box sx={{ maxWidth: 1400 }}>
+      <RecordHeader
+        breadcrumbs={[
+          { label: 'Outflow budget', onClick: () => navigate('/outflow-budget') },
+          { label: `${row.budgetCode} · ${row.budgetName}`, onClick: () => navigate(`/budgets/${row.budgetId}`) },
+          { label: `${row.lineCode} · ${row.quarterLabel}` },
+        ]}
+        icon={TypeIcon}
+        iconHint={`${BUDGET_TYPE[row.budgetType] || ''} budget`}
+        eyebrow={`${row.budgetCode} · ${row.lineCode} · ${row.quarterLabel} · FY ${row.financialYear}`}
         title={row.line}
-        subtitle={`${row.budgetName} · ${row.scope}`}
-        actions={<StatusChip label={PAYMENT_STATUS[status] || status} tone={PAYMENT_STATUS_TONE[status]} />}
-      />
-
-      <SpendingSummary row={row} noteCount={lineNotes.length} />
-
-      <SectionCard
-        title="Debit notes"
-        action={
-          <Stack direction="row" spacing={1}>
-            <Button size="small" onClick={() => navigate('/debit-notes')}>
-              Go to Debit Notes
+        status={<StatusChip label={PAYMENT_STATUS[status] || status} tone={PAYMENT_STATUS_TONE[status]} />}
+        meta={[
+          { label: row.scope, strong: true, hint: `${BUDGET_TYPE[row.budgetType] || ''} budget` },
+          { icon: PlaceOutlinedIcon, label: row.stateName || 'All states' },
+          { icon: LabelOutlinedIcon, label: row.categoryName || '—', hint: 'Category' },
+          { icon: AccountBalanceWalletOutlinedIcon, label: `${row.book} · ${BOOK[row.book] || ''}`, hint: 'Book' },
+        ]}
+        actions={
+          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+            <Button variant="outlined" endIcon={<OpenInNewRoundedIcon sx={{ fontSize: 16 }} />} onClick={() => navigate(`/budgets/${row.budgetId}`)}>
+              Open budget
             </Button>
-            <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={() => navigate(`/debit-notes/new?line=${row.id}`)}>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={addNote}>
               Add debit note
             </Button>
           </Stack>
         }
-      >
-        {debitNotesQuery.isPending ? (
-          <Typography variant="body2" color="text.secondary">
-            Loading debit notes…
-          </Typography>
-        ) : debitNotesQuery.isError ? (
-          <ErrorState error={debitNotesQuery.error} onRetry={debitNotesQuery.refetch} />
-        ) : (
-          <DebitNotesTable notes={lineNotes} navigate={navigate} />
-        )}
-      </SectionCard>
+      />
 
-      <SectionCard
-        title="Budget line"
-        action={
-          <Button size="small" onClick={() => navigate(`/budgets/${row.budgetId}`)}>
-            Open budget
-          </Button>
-        }
+      <StatStrip
+        sx={{ mb: 2 }}
+        stats={[
+          { label: 'Budgeted', value: formatInrExact(budget), note: `${row.quarterLabel} · due ${formatDate(row.expectedDate)}` },
+          {
+            label: 'Spent',
+            value: spent ? formatInrExact(spent) : '₹0',
+            note: lineNotes.length ? `${lineNotes.length} debit ${lineNotes.length === 1 ? 'note' : 'notes'}` : 'no debit notes yet',
+          },
+          {
+            label: over ? 'Over budget' : 'Remaining',
+            value: formatInrExact(Math.abs(row.remaining)),
+            note: over ? 'spent more than budgeted' : row.remaining === 0 ? 'fully spent' : 'still available on this line',
+            color: over ? 'error.main' : 'success.main',
+          },
+          {
+            label: 'Status',
+            value: PAYMENT_STATUS[status] || status,
+            note: late ? `${late} ${late === 1 ? 'day' : 'days'} past the quarter's end` : status === 'PAID' ? 'debit notes cover the budget' : 'quarter not ended yet',
+            color: STATUS_COLOR[status],
+          },
+        ]}
+        footer={<UsageBar budget={budget} spent={spent} />}
+      />
+
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 2,
+          gridTemplateColumns: { xs: 'minmax(0, 1fr)', lg: 'minmax(0, 2fr) minmax(0, 1fr)' },
+          alignItems: 'start',
+        }}
       >
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
-            gap: 3,
-          }}
+        <SectionCard
+          title={`Debit notes${lineNotes.length ? ` · ${lineNotes.length}` : ''}`}
+          aside={
+            <Button size="small" onClick={() => navigate('/debit-notes')} sx={{ color: 'text.secondary' }}>
+              All debit notes
+            </Button>
+          }
         >
-          <Box sx={{ gridColumn: 'span 2' }}>
-            <Fact label="Budget">{`${row.budgetCode} — ${row.budgetName}`}</Fact>
-          </Box>
-          <Box sx={{ gridColumn: 'span 2' }}>
-            <Fact label="Line">{`${row.lineCode} — ${row.line}`}</Fact>
-          </Box>
-          <Fact label="Category">{row.categoryName || '—'}</Fact>
-          <Fact label="Scope">
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
-              <StatusChip label={BUDGET_TYPE[row.budgetType]} tone={BUDGET_TYPE_TONE[row.budgetType]} />
-              <Typography variant="body1">{row.scope}</Typography>
-            </Stack>
-          </Fact>
-          <Fact label="State">{row.stateName || 'All states'}</Fact>
-          <Fact label="Book">
-            <StatusChip label={row.book} tone={BOOK_TONE[row.book]} />
-          </Fact>
-          <Fact label="Quarter">{`${row.quarterLabel} · FY ${row.financialYear}`}</Fact>
-          <Fact label="Due by">{formatDate(row.expectedDate)}</Fact>
-        </Box>
-      </SectionCard>
-    </>
+          {debitNotesQuery.isPending ? (
+            <Typography variant="body2" color="text.secondary">Loading debit notes…</Typography>
+          ) : debitNotesQuery.isError ? (
+            <ErrorState error={debitNotesQuery.error} onRetry={debitNotesQuery.refetch} />
+          ) : (
+            <DebitNotesTable notes={lineNotes} navigate={navigate} onAdd={addNote} />
+          )}
+        </SectionCard>
+
+        <SectionCard title="Budget line">
+          <FactRow label="Budget">
+            <Tooltip title="Open budget" describeChild>
+              <Box
+                component="button"
+                type="button"
+                onClick={() => navigate(`/budgets/${row.budgetId}`)}
+                sx={{ font: 'inherit', fontWeight: 600, border: 0, p: 0, bgcolor: 'transparent', color: 'text.primary', cursor: 'pointer', textAlign: 'right', textDecoration: 'underline', textDecorationColor: 'var(--line)', textUnderlineOffset: 3, '&:hover': { textDecorationColor: 'currentColor' } }}
+              >
+                {row.budgetName}
+              </Box>
+            </Tooltip>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontFamily: 'monospace' }}>{row.budgetCode}</Typography>
+          </FactRow>
+          <FactRow label="Line">
+            {row.line}
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontFamily: 'monospace' }}>{row.lineCode}</Typography>
+          </FactRow>
+          <FactRow label="Type">{BUDGET_TYPE[row.budgetType] || '—'}</FactRow>
+          <FactRow label="Scope">{row.scope}</FactRow>
+          <FactRow label="Category">{row.categoryName || '—'}</FactRow>
+          <FactRow label="State">{row.stateName || 'All states'}</FactRow>
+          <FactRow label="Book">{row.book} · {BOOK[row.book] || ''}</FactRow>
+          <FactRow label="Quarter">{row.quarterLabel} · FY {row.financialYear}</FactRow>
+          <FactRow label="Due by">{formatDate(row.expectedDate)}</FactRow>
+        </SectionCard>
+      </Box>
+    </Box>
   );
 }

@@ -2,6 +2,10 @@ package com.ngo.finance.donor.service.impl;
 
 import com.ngo.finance.common.exception.ResourceNotFoundException;
 import com.ngo.finance.common.exception.ValidationException;
+import com.ngo.finance.common.sequence.DocumentNumberService;
+import com.ngo.finance.funding.enums.FundingChangeAction;
+import com.ngo.finance.funding.service.FundingChangeLogService;
+import com.ngo.finance.common.sequence.DocumentNumberService.DocType;
 import com.ngo.finance.donor.dto.request.ApproveGrantRequest;
 import com.ngo.finance.donor.dto.request.CreateGrantRequest;
 import com.ngo.finance.donor.dto.request.GrantRemarksRequest;
@@ -16,10 +20,9 @@ import com.ngo.finance.donor.repository.DonorFundProfileRepository;
 import com.ngo.finance.donor.repository.GrantRepository;
 import com.ngo.finance.donor.service.GrantService;
 import com.ngo.finance.userRegister.repository.UserRegisterRepo;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -45,9 +48,17 @@ public class GrantServiceImpl implements GrantService {
     @Autowired
     private UserRegisterRepo userRegisterRepo;
 
-    /** Auto-generated grant code prefix: ZRY/GA/YYYY/NNN. */
-    private static final String GRANT_CODE_PREFIX = "ZRY/GA/";
-    private static final Pattern LEADING_DIGITS = Pattern.compile("^(\\d+)");
+    @Autowired
+    private DocumentNumberService documentNumbers;
+
+    @Autowired
+    private FundingChangeLogService fundingChangeLog;
+
+    /** A status step on the funding record's change history (agreements without a funding record have none). */
+    private void statusLog(GrantAgreement grant, FundingChangeAction action, String from, String to, String note, String actor) {
+        Long profileId = grant.getFundProfile() != null ? grant.getFundProfile().getId() : null;
+        fundingChangeLog.recordStatus(profileId, grant.getId(), action, from, to, note, actor);
+    }
 
     @Override
     public GrantDetailsResponse createGrant(CreateGrantRequest request) {
@@ -116,25 +127,27 @@ public class GrantServiceImpl implements GrantService {
                 .orElse(null));
     }
 
-    /** Use the supplied code, or generate the next ZRY/GA/YYYY/NNN for the agreement year. */
+    /**
+     * Use the supplied code, or the next GA-{FY}-{nnn} for the agreement's
+     * financial year (April–March), e.g. GA-2026-27-023. Numbers come from
+     * document_sequence, so concurrent saves never share one; a number already
+     * taken by a hand-entered code is skipped.
+     */
     private String resolveGrantCode(CreateGrantRequest request) {
         if (request.getGrantCode() != null && !request.getGrantCode().isBlank()) {
             return request.getGrantCode().trim();
         }
-        int year = request.getAgreementDate().getYear();
-        String prefix = GRANT_CODE_PREFIX + year + "/";
-        int next = grantRepository.findGrantCodesByPrefix(prefix).stream()
-                .map(code -> code.substring(prefix.length()))
-                .mapToInt(GrantServiceImpl::leadingSequence)
-                .max()
-                .orElse(0) + 1;
-        return String.format("%s%03d", prefix, next);
+        return nextGrantCode(request.getAgreementDate());
     }
 
-    /** Parse the leading numeric run of a code suffix (e.g. "012-B" -> 12); 0 if none. */
-    private static int leadingSequence(String suffix) {
-        Matcher matcher = LEADING_DIGITS.matcher(suffix);
-        return matcher.find() ? Integer.parseInt(matcher.group(1)) : 0;
+    /** Next free GA-{FY}-{nnn} for an agreement signed on {@code agreementDate}. */
+    public String nextGrantCode(LocalDate agreementDate) {
+        String fy = DocumentNumberService.financialYearOf(agreementDate);
+        String code;
+        do {
+            code = String.format("GA-%s-%03d", fy, documentNumbers.next(DocType.GRANT, fy));
+        } while (grantRepository.existsByGrantCode(code));
+        return code;
     }
 
     /**
@@ -246,7 +259,7 @@ public class GrantServiceImpl implements GrantService {
     }
 
     @Override
-    public void approveGrant(Long id, ApproveGrantRequest request) {
+    public void approveGrant(Long id, ApproveGrantRequest request, String actor) {
         log.info("Approving grant with id: {}", id);
 
         GrantAgreement grant = grantRepository.findById(id)
@@ -258,6 +271,7 @@ public class GrantServiceImpl implements GrantService {
             grant.setApprovalRemarks(request != null ? request.getRemarks() : null);
             grant.setApprovalDate(LocalDateTime.now());
             grantRepository.save(grant);
+            statusLog(grant, FundingChangeAction.APPROVED, "Pending approval", "Approved", request != null ? request.getRemarks() : null, actor);
             log.info("Grant approved successfully");
         } else {
             log.warn("Cannot approve grant with isApproved: {}", grant.getIsApproved());
@@ -265,7 +279,7 @@ public class GrantServiceImpl implements GrantService {
     }
 
     @Override
-    public void activateGrant(Long id) {
+    public void activateGrant(Long id, String actor) {
         log.info("Activating grant with id: {}", id);
 
         GrantAgreement grant = grantRepository.findById(id)
@@ -274,6 +288,7 @@ public class GrantServiceImpl implements GrantService {
         if (grant.getIsApproved() == 1) {
             applyStatus(grant, GrantStatus.ACTIVE);
             grantRepository.save(grant);
+            statusLog(grant, FundingChangeAction.ACTIVATED, "Inactive", "Active", null, actor);
             log.info("Grant activated successfully");
         } else {
             log.warn("Cannot activate grant that is not approved (isApproved: {})", grant.getIsApproved());
@@ -281,20 +296,22 @@ public class GrantServiceImpl implements GrantService {
     }
 
     @Override
-    public void closeGrant(Long id) {
+    public void closeGrant(Long id, String actor) {
         log.info("Closing grant with id: {}", id);
 
         GrantAgreement grant = grantRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Grant", id));
 
         // Closing is the cancel path: the agreement stops being live.
+        String wasStatus = grant.getGrantStatus() != null ? grant.getGrantStatus().name() : null;
         applyStatus(grant, GrantStatus.CANCELLED);
         grantRepository.save(grant);
+        statusLog(grant, FundingChangeAction.CLOSED, wasStatus, "Closed", null, actor);
         log.info("Grant closed successfully");
     }
 
     @Override
-    public void holdGrant(Long id, GrantRemarksRequest request) {
+    public void holdGrant(Long id, GrantRemarksRequest request, String actor) {
         log.info("Putting grant with id: {} on hold", id);
 
         GrantAgreement grant = grantRepository.findById(id)
@@ -306,6 +323,7 @@ public class GrantServiceImpl implements GrantService {
                 grant.setApprovalRemarks(request.getRemarks());
             }
             grantRepository.save(grant);
+            statusLog(grant, FundingChangeAction.ON_HOLD, "Approved", "On hold", request != null ? request.getRemarks() : null, actor);
             log.info("Grant put on hold successfully");
         } else {
             log.warn("Cannot put grant on hold that is not approved (isApproved: {})", grant.getIsApproved());
@@ -313,7 +331,7 @@ public class GrantServiceImpl implements GrantService {
     }
 
     @Override
-    public void resumeGrant(Long id) {
+    public void resumeGrant(Long id, String actor) {
         log.info("Resuming grant with id: {}", id);
 
         GrantAgreement grant = grantRepository.findById(id)
@@ -322,6 +340,7 @@ public class GrantServiceImpl implements GrantService {
         if (grant.getIsApproved() == 3) {
             grant.setIsApproved(1);
             grantRepository.save(grant);
+            statusLog(grant, FundingChangeAction.RESUMED, "On hold", "Approved", null, actor);
             log.info("Grant resumed successfully");
         } else {
             log.warn("Cannot resume grant that is not on hold (isApproved: {})", grant.getIsApproved());
@@ -329,7 +348,7 @@ public class GrantServiceImpl implements GrantService {
     }
 
     @Override
-    public void completeGrant(Long id) {
+    public void completeGrant(Long id, String actor) {
         log.info("Completing grant with id: {}", id);
 
         GrantAgreement grant = grantRepository.findById(id)
@@ -339,6 +358,7 @@ public class GrantServiceImpl implements GrantService {
             grant.setIsApproved(4);
             applyStatus(grant, GrantStatus.COMPLETED);
             grantRepository.save(grant);
+            statusLog(grant, FundingChangeAction.COMPLETED, "Approved", "Completed", null, actor);
             log.info("Grant completed successfully");
         } else {
             log.warn("Cannot complete grant that is not approved (isApproved: {})", grant.getIsApproved());

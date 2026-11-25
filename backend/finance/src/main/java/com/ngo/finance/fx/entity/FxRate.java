@@ -35,7 +35,7 @@ public class FxRate extends AuditEntity {
     @Column(name = "rate_to_inr", nullable = false, precision = 12, scale = 4)
     private BigDecimal rateToInr;
 
-    /** 'RBI' when fetched from the reference feed, 'SEED' / 'MANUAL' otherwise. */
+    /** 'FBIL' (RBI reference rate) or 'ECB' when fetched from Frankfurter; 'SEED' / 'MANUAL' otherwise. */
     @Column(nullable = false, length = 50)
     private String source;
 }

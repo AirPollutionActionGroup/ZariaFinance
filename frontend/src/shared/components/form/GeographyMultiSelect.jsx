@@ -9,12 +9,8 @@ import { geographyService } from '../../../features/donor-management/services/ge
  * {value: state.id, label: state.stateName}) — every consumer sends these
  * straight through as stateIds, not names.
  *
- * "All" has two possible meanings depending on the consumer:
- *  - `allMeansEmpty` (default): "All" means unrestricted — the field submits
- *    as an empty list (e.g. a fund profile with no geography restriction).
- *  - `allSelectsEverything`: "All" is a shortcut that expands to literally
- *    every state id (e.g. donations, whose stateIds is required to be
- *    non-empty — there is no "unrestricted" concept to fall back to).
+ * "All" means unrestricted — the field submits as an empty list (e.g. a fund
+ * profile with no geography restriction).
  */
 export function GeographyMultiSelect({
   name = 'selectedGeographies',
@@ -22,7 +18,9 @@ export function GeographyMultiSelect({
   label = 'Geography name',
   required = false,
   helperText,
-  allSelectsEverything = false,
+  // Optional: limit the choices to these state ids (e.g. a programme's states).
+  // When set, "All" is hidden — only the listed states can be picked.
+  allowedStateIds = null,
 }) {
   const { data: apiStates } = useQuery({
     queryKey: ['geography', 'states'],
@@ -30,19 +28,21 @@ export function GeographyMultiSelect({
     staleTime: 1000 * 60 * 60,
   });
 
-  const options = useMemo(() => [
-    { value: 'ALL', label: 'All (Spendable anywhere)' },
-    ...(apiStates || []),
-  ], [apiStates]);
+  const restricted = Array.isArray(allowedStateIds) && allowedStateIds.length > 0;
+  const allowedKey = restricted ? allowedStateIds.join(',') : '';
+  const options = useMemo(() => {
+    if (restricted) {
+      const allowed = new Set(allowedKey.split(','));
+      return (apiStates || []).filter((s) => allowed.has(String(s.value)));
+    }
+    return [{ value: 'ALL', label: 'All (Spendable anywhere)' }, ...(apiStates || [])];
+  }, [apiStates, restricted, allowedKey]);
 
   // "All" is exclusive of specific states either way: picking it drops
   // whatever states were already selected, and picking a state while "All"
   // is active drops "All" rather than silently keeping both (the mapper would
   // otherwise treat the selection as "All" and discard the states unnoticed).
   const transformSelection = (values, previousValues) => {
-    if (allSelectsEverything) {
-      return values.includes('ALL') ? (apiStates || []).map((s) => s.value) : values;
-    }
     const hadAll = (previousValues || []).includes('ALL');
     const hasAll = values.includes('ALL');
     if (hasAll && !hadAll) {
@@ -54,9 +54,8 @@ export function GeographyMultiSelect({
     return values;
   };
 
-  const defaultHelperText = allSelectsEverything
-    ? "Select Indian states / UTs, or select All to apply every state"
-    : "Select Indian states / UTs, or select All (defaults to 'No geographies — spendable anywhere' if left blank)";
+  const defaultHelperText =
+    "Select Indian states / UTs, or select All (defaults to 'No geographies — spendable anywhere' if left blank)";
 
   return (
     <RhfMultiSelect

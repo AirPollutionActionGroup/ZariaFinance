@@ -4,6 +4,7 @@ import com.ngo.finance.common.entity.AuditEntity;
 import com.ngo.finance.donor.enums.DisbursementType;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -51,6 +52,10 @@ public class DonorDisbursementRule extends AuditEntity {
 
     @Column(name = "receiving_date")
     private LocalDate receivingDate;
+
+    /** FC book only: currency, foreign amount and the FX rate the INR total was derived from. Null for INR. */
+    @Embedded
+    private ForeignAmount foreignContribution;
 
     @OneToMany(mappedBy = "donorDisbursementRule", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

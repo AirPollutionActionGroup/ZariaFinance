@@ -20,12 +20,12 @@ import { foreignContributionDefaults, formatForeign } from '../../donor-manageme
  * supplies itself) only when withAgreement is on.
  *
  * FC book (foreign donor): when `requireFc` is on, currency, foreign amount,
- * rate date and FX rate are required — they derive the INR total. The
- * backend stores INR only, so they aren't persisted and aren't required
- * when editing.
+ * rate date and FX rate are required — they derive the INR total, and are
+ * saved with it (donor_disbursement_rule). Editing an older FC record saved
+ * before these fields existed doesn't require them.
  *
- * There is no agreement-name field: the backend still requires one, so the
- * form generates it on save (see agreementNameFor in FundingFormPage).
+ * There is no agreement-name field: the server names the agreement when it is
+ * first saved (AgreementNamer — donor · purpose/programme · FY) and keeps it.
  */
 export const agreementSchema = z
   .object({
@@ -33,7 +33,7 @@ export const agreementSchema = z
     startDate: z.string().min(1, 'Start date is required'),
     endDate: z.string().min(1, 'End date is required'),
     description: z.string().trim().optional().or(z.literal('')),
-    agreementDocumentPath: z.string().trim().optional().or(z.literal('')),
+    agreementDocumentPath: z.string().trim().min(1, 'Signed agreement document is required'),
   })
   .refine((v) => !v.startDate || !v.endDate || v.endDate >= v.startDate, {
     message: 'End date cannot be before start date',

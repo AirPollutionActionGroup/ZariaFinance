@@ -1,6 +1,9 @@
 package com.ngo.finance.transaction.api;
 
 import com.ngo.finance.transaction.dto.request.CreateDebitNoteRequest;
+import com.ngo.finance.transaction.dto.request.DebitNoteImportRequest;
+import com.ngo.finance.transaction.dto.response.DebitNoteImportResponse;
+import com.ngo.finance.transaction.service.DebitNoteImportService;
 import com.ngo.finance.transaction.dto.response.NoteResponse;
 import com.ngo.finance.transaction.service.DebitNoteService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -26,6 +29,8 @@ public class DebitNoteController {
 
     private final DebitNoteService debitNoteService;
 
+    private final DebitNoteImportService debitNoteImportService;
+
     @GetMapping
     @Operation(summary = "List debit notes, newest first")
     public ResponseEntity<List<NoteResponse>> listDebitNotes() {
@@ -42,5 +47,11 @@ public class DebitNoteController {
     @Operation(summary = "Issue a debit note against an outflow row")
     public ResponseEntity<NoteResponse> createDebitNote(@Valid @RequestBody CreateDebitNoteRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(debitNoteService.createDebitNote(request));
+    }
+
+    @PostMapping("/import")
+    @Operation(summary = "Import debit notes from CSV rows — dryRun checks and reports every row without saving")
+    public ResponseEntity<DebitNoteImportResponse> importDebitNotes(@Valid @RequestBody DebitNoteImportRequest request) {
+        return ResponseEntity.ok(debitNoteImportService.importNotes(request));
     }
 }

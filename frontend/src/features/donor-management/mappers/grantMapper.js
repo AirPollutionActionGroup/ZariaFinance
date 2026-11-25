@@ -54,26 +54,3 @@ export function toGrantFormValues(grant) {
     agreementDocumentPath: grant.agreementDocumentPath || '',
   };
 }
-
-/**
- * Form values → CreateGrantRequest. Donor, class and the total (Σ of the fund
- * profile's tranche plan) are all derived server-side from fundProfileId.
- */
-export function toCreateGrantRequest(values) {
-  return {
-    // Omitted on create → backend auto-generates ZRY/GA/YYYY/NNN.
-    grantCode: values.grantCode?.trim() || undefined,
-    fundProfileId: Number(values.fundProfileId),
-    agreementName: values.agreementName.trim(),
-    status: values.status || 'ACTIVE',
-    agreementDate: values.agreementDate,
-    startDate: values.startDate,
-    endDate: values.endDate,
-    approvalStatus: Number(values.approvalStatus || 2),
-    approvedBy: values.approvedBy ? Number(values.approvedBy) : null,
-    approvalDate: values.approvalDate || null,
-    approvalRemarks: values.approvalRemarks?.trim() || null,
-    description: values.description?.trim() || null,
-    agreementDocumentPath: values.agreementDocumentPath?.trim() || null,
-  };
-}

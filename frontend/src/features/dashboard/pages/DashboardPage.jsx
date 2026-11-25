@@ -11,9 +11,9 @@ import {
 } from '../../../shared/components/index.js';
 import { formatInr } from '../../../lib/format/currency.js';
 import { useDonors } from '../../donor-management/hooks/useDonors.js';
-import { useGrants } from '../../donor-management/hooks/useGrants.js';
+import { useFundingRecords } from '../../funding-agreements/hooks/useFunding.js';
 import { DONOR_ACTIVE_TONE, GRANT_ACTIVE_TONE } from '../../donor-management/constants.js';
-import { grantsWithDonorStatusClash, recentGrants } from '../services/dashboardService.js';
+import { grantsFromFunding, grantsWithDonorStatusClash, recentGrants } from '../services/dashboardService.js';
 import { useDashboardSummary } from '../hooks/useDashboardSummary.js';
 import { FundingChainCard } from '../components/FundingChainCard.jsx';
 import { RecordsDialog } from '../components/RecordsDialog.jsx';
@@ -100,7 +100,15 @@ const recentColumns = [
 export function DashboardPage() {
   const summaryQuery = useDashboardSummary();
   const donorsQuery = useDonors('');
-  const grantsQuery = useGrants({});
+  // Grant agreements come from the funding list (each record's agreement).
+  const fundingQuery = useFundingRecords();
+  const grantsQuery = {
+    isPending: fundingQuery.isPending,
+    isError: Boolean(fundingQuery.error),
+    error: fundingQuery.error,
+    refetch: fundingQuery.refetch,
+    data: grantsFromFunding(fundingQuery.records),
+  };
   const navigate = useNavigate();
   const [dialog, setDialog] = useState(null); // 'donors' | 'grants' | null
 
@@ -221,7 +229,7 @@ export function DashboardPage() {
             getRowKey={(row) => row.id}
             emptyTitle="No grant agreements yet"
             emptyDescription="Once grants are recorded they will appear here."
-            onRowClick={(row) => navigate(`/grants/${row.id}`)}
+            onRowClick={(row) => navigate(row.fundProfileId ? `/funding/${row.fundProfileId}` : '/funding')}
           />
         </Box>
       </Stack>
@@ -240,7 +248,7 @@ export function DashboardPage() {
         title={`Grant agreements (${grants.length})`}
         columns={grantDialogColumns}
         rows={grants}
-        primaryAction={{ label: 'Open Grant Agreements →', onClick: () => navigate('/grants') }}
+        primaryAction={{ label: 'Open Funding Agreements →', onClick: () => navigate('/funding') }}
       />
     </>
   );

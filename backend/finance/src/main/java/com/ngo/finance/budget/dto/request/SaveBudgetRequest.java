@@ -34,7 +34,7 @@ public class SaveBudgetRequest {
     @NotNull(message = "Budget type is required")
     private BudgetType budgetType;
 
-    /** Required for PROGRAMME budgets; ignored for ORGANISATION ones. */
+    /** Required for PROGRAMME and PROJECT budgets (a Programme or Project record); ignored for ORGANISATION ones. */
     private Long programmeId;
 
     /** Optional — null means all states. */

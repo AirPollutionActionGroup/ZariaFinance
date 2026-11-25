@@ -14,6 +14,7 @@ import org.mapstruct.Mapping;
 public interface GrantMapper {
 
     @Mapping(target = "id", ignore = true)
+    @Mapping(target = "legacyCode", ignore = true)
     @Mapping(target = "donor", ignore = true)
     @Mapping(target = "fundProfile", ignore = true)
     @Mapping(target = "createdAt", ignore = true)

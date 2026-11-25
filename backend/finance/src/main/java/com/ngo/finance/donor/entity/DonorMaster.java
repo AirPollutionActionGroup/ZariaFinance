@@ -5,7 +5,14 @@ import com.ngo.finance.common.enums.ContributionType;
 import com.ngo.finance.common.enums.FundSourceDomicile;
 import com.ngo.finance.masters.donortype.entity.DonorTypeMaster;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
+import java.util.ArrayList;
+import java.util.List;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -60,9 +67,9 @@ public class DonorMaster extends AuditEntity {
     @Column(name = "passport_id", length = 20)
     private String passportId;
 
-    /** Code of a Document Type master row (e.g. PAN_CARD); null when no document is held. */
-    @Column(name = "document_type", length = 50)
-    private String documentType;
+    /** Id of the Document Type master row (PAN Card, …); null when no document is held. */
+    @Column(name = "document_type_id")
+    private Long documentTypeId;
 
     @Column(name = "document_number", length = 50)
     private String documentNumber;
@@ -76,14 +83,13 @@ public class DonorMaster extends AuditEntity {
     @Column(length = 255)
     private String website;
 
-    @Column(nullable = false, length = 255)
-    private String spocNameOfThePerson;
-
-    @Column(nullable = true, length = 255)
-    private String spocPhoneNumber;
-
-    @Column(nullable = false, length = 255)
-    private String spocEmail;
+    /** Points of contact — one or more, exactly one primary. Saved and removed with the donor. */
+    @OneToMany(mappedBy = "donor", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("isPrimary DESC, sortOrder ASC, id ASC")
+    @Builder.Default
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private List<DonorContact> contacts = new ArrayList<>();
 
     @Column(columnDefinition = "TEXT")
     private String address;

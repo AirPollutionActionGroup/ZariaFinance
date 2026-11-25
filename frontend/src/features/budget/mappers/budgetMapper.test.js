@@ -79,6 +79,7 @@ describe('budgetMapper', () => {
   it('only sends a real programme id (not a name-only seed option)', () => {
     const base = { name: 'P', financialYear: '2026-27', budgetType: 'PROGRAMME', lines: [] };
     expect(toSaveBudgetRequest({ ...base, programmeId: 6 }).programmeId).toBe(6);
+    expect(toSaveBudgetRequest({ ...base, budgetType: 'PROJECT', programmeId: 65 }).programmeId).toBe(65);
     expect(toSaveBudgetRequest({ ...base, programmeId: 'name:Old' }).programmeId).toBeNull();
   });
 });

@@ -2,7 +2,10 @@ package com.ngo.finance.donor.dto.request;
 
 import com.ngo.finance.common.enums.ContributionType;
 import com.ngo.finance.common.enums.FundSourceDomicile;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Size;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -33,8 +36,8 @@ public class UpdateDonorRequest {
 
     private String passportId;
 
-    /** Code of a Document Type master row (e.g. PAN_CARD). */
-    private String documentType;
+    /** Id of a Document Type master row (PAN Card, …); null leaves it unchanged. */
+    private Long documentTypeId;
 
     private String documentNumber;
 
@@ -45,12 +48,13 @@ public class UpdateDonorRequest {
 
     private String website;
 
-    private String spocNameOfThePerson;
-
-    private String spocPhoneNumber;
-
-    @Email(message = "SPOC Email must be valid")
-    private String spocEmail;
+    /**
+     * Points of contact. Null leaves them as they are; a list replaces them —
+     * items with an id are updated, new ones added, the rest removed.
+     */
+    @Size(min = 1, max = 10, message = "A donor needs 1 to 10 points of contact")
+    @Valid
+    private List<DonorContactItem> contacts;
 
     private String address;
 

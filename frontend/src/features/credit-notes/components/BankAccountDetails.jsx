@@ -1,7 +1,7 @@
 import { Box, Link, Stack, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { StatusChip } from '../../../shared/components/index.js';
-import { BOOK_TONE } from '../../donation-management/constants.js';
+import { BOOK_TONE } from '../../../shared/constants/book.js';
 import { useBankDetail } from '../../bank-details/hooks/useBankDetails.js';
 
 const masked = (accountNumber) => (accountNumber ? `****${String(accountNumber).slice(-4)}` : '');

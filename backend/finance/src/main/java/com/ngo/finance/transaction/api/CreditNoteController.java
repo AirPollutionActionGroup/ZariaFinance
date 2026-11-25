@@ -1,7 +1,10 @@
 package com.ngo.finance.transaction.api;
 
 import com.ngo.finance.transaction.dto.request.CreateCreditNoteRequest;
+import com.ngo.finance.transaction.dto.request.CreditNoteImportRequest;
+import com.ngo.finance.transaction.dto.response.CreditNoteImportResponse;
 import com.ngo.finance.transaction.dto.response.NoteResponse;
+import com.ngo.finance.transaction.service.CreditNoteImportService;
 import com.ngo.finance.transaction.service.CreditNoteService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CreditNoteController {
 
     private final CreditNoteService creditNoteService;
+    private final CreditNoteImportService creditNoteImportService;
 
     @GetMapping
     @Operation(summary = "List credit notes, newest first")
@@ -42,5 +46,11 @@ public class CreditNoteController {
     @Operation(summary = "Issue a credit note (optionally against an outflow row / reversing a debit note)")
     public ResponseEntity<NoteResponse> createCreditNote(@Valid @RequestBody CreateCreditNoteRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(creditNoteService.createCreditNote(request));
+    }
+
+    @PostMapping("/import")
+    @Operation(summary = "Import credit notes from CSV rows — dryRun checks and reports every row without saving")
+    public ResponseEntity<CreditNoteImportResponse> importCreditNotes(@Valid @RequestBody CreditNoteImportRequest request) {
+        return ResponseEntity.ok(creditNoteImportService.importNotes(request));
     }
 }

@@ -1,5 +1,6 @@
 package com.ngo.finance.donor.repository;
 
+import java.util.Optional;
 import com.ngo.finance.donor.entity.DonorFundProfile;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,4 +19,7 @@ public interface DonorFundProfileRepository extends JpaRepository<DonorFundProfi
 
     @Query("SELECT p FROM DonorFundProfile p ORDER BY p.createdAt DESC")
     List<DonorFundProfile> findAllNewestFirst();
+
+    /** A profile by its code (FP-2026-001) — used to match rows in a CSV import. */
+    Optional<DonorFundProfile> findByProfileCode(String profileCode);
 }

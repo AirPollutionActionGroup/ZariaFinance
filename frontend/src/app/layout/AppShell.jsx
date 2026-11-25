@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Box } from '@mui/material';
 import { Outlet } from 'react-router-dom';
 import { layout } from '../../theme/tokens.js';
@@ -7,11 +8,13 @@ import { OnboardingTour } from '../../features/onboarding/index.js';
 
 /** Authenticated application frame: sidebar + top bar + routed content. */
 export function AppShell() {
+  // Small screens: the sidebar is a slide-out menu, opened from the top bar.
+  const [navOpen, setNavOpen] = useState(false);
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      <SideNav />
+      <SideNav mobileOpen={navOpen} onClose={() => setNavOpen(false)} />
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <TopBar />
+        <TopBar onMenu={() => setNavOpen(true)} />
         <Box
           component="main"
           sx={{

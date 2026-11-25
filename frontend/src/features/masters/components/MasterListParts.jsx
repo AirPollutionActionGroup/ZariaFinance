@@ -1,4 +1,9 @@
-import { Box, Button, Chip, Stack, Typography } from '@mui/material';
+import { useState } from 'react';
+import { Box, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material';
+import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import BlockRoundedIcon from '@mui/icons-material/BlockRounded';
+import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import { SearchField, StatusChip } from '../../../shared/components/index.js';
 
 /** Status filter values match the backend status strings ('ACTIVE' / 'INACTIVE'). */
@@ -13,29 +18,34 @@ export function applyStatusFilter(rows, filter) {
   return rows.filter(f.match);
 }
 
-/** Search box plus All / Active / Inactive chips with counts; `action` (e.g. an Add button) sits on the right. */
+/**
+ * Search box plus an All / Active / Inactive filter with counts; `action`
+ * (e.g. an Add button) sits on the right. Padded to sit inside the masters panel.
+ */
 export function MasterToolbar({ search, onSearch, placeholder, status, onStatus, rows = [], action = null }) {
   return (
-    <Stack direction="row" sx={{ mb: 1.5, gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-      <Box sx={{ width: { xs: '100%', sm: 280 }, mr: { sm: 1 } }}>
-        <SearchField value={search} onChange={onSearch} placeholder={placeholder} />
+    <Stack direction="row" sx={{ px: { xs: 2, md: 3 }, pb: 2, gap: 1.25, alignItems: 'center', flexWrap: 'wrap' }}>
+      <Box sx={{ width: { xs: '100%', sm: 260 } }}>
+        <SearchField value={search} onChange={onSearch} placeholder={placeholder} size="small" />
       </Box>
-      {STATUS_FILTERS.map((f) => {
-        const selected = status === f.value;
-        const count = rows.filter(f.match).length;
-        if (f.value === 'INACTIVE' && count === 0 && !selected) return null;
-        return (
-          <Chip
-            key={f.value}
-            size="small"
-            label={`${f.label} · ${count}`}
-            onClick={() => onStatus(f.value)}
-            color={selected ? 'primary' : 'default'}
-            variant={selected ? 'filled' : 'outlined'}
-            aria-pressed={selected}
-          />
-        );
-      })}
+      <ToggleButtonGroup
+        size="small"
+        exclusive
+        value={status}
+        onChange={(_e, v) => v && onStatus(v)}
+        aria-label="Filter by status"
+        sx={{ '& .MuiToggleButton-root': { px: 1.4, py: 0.45, textTransform: 'none', fontWeight: 600, fontSize: 12.5 } }}
+      >
+        {STATUS_FILTERS.map((f) => {
+          const count = rows.filter(f.match).length;
+          if (f.value === 'INACTIVE' && count === 0 && status !== f.value) return null;
+          return (
+            <ToggleButton key={f.value} value={f.value}>
+              {f.label} · {count}
+            </ToggleButton>
+          );
+        })}
+      </ToggleButtonGroup>
       {action ? <Box sx={{ ml: 'auto' }}>{action}</Box> : null}
     </Stack>
   );
@@ -54,36 +64,73 @@ export const statusColumn = {
   ),
 };
 
-/**
- * Right-aligned row actions: optional Edit, and Deactivate / Activate named
- * for what it will do (rather than a generic "Change status").
- */
+/** A row's actions in a "⋯" menu: Edit (when the master allows it) and Activate / Deactivate. */
+function RowActions({ row, onEdit, onToggle }) {
+  const [anchor, setAnchor] = useState(null);
+  const active = row.status === 'ACTIVE';
+  const close = () => setAnchor(null);
+  return (
+    <>
+      <Tooltip title="Actions">
+        <IconButton
+          size="small"
+          aria-label={`Actions for ${row.name}`}
+          aria-haspopup="menu"
+          onClick={(e) => {
+            e.stopPropagation();
+            setAnchor(e.currentTarget);
+          }}
+          sx={{ color: 'text.secondary' }}
+        >
+          <MoreHorizRoundedIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Menu
+        anchorEl={anchor}
+        open={Boolean(anchor)}
+        onClose={close}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { minWidth: 180 } } }}
+      >
+        {onEdit ? (
+          <MenuItem
+            onClick={() => {
+              close();
+              onEdit(row);
+            }}
+          >
+            <ListItemIcon>
+              <EditOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="Edit" />
+          </MenuItem>
+        ) : null}
+        <MenuItem
+          onClick={() => {
+            close();
+            onToggle(row);
+          }}
+          sx={{ color: active ? 'var(--warn)' : 'var(--ok)' }}
+        >
+          <ListItemIcon sx={{ color: 'inherit' }}>
+            {active ? <BlockRoundedIcon fontSize="small" /> : <CheckCircleOutlineRoundedIcon fontSize="small" />}
+          </ListItemIcon>
+          <ListItemText primary={active ? 'Deactivate' : 'Activate'} />
+        </MenuItem>
+      </Menu>
+    </>
+  );
+}
+
+/** Right-aligned "⋯" column with each row's actions. */
 export function actionsColumn({ onEdit, onToggle }) {
   return {
     key: 'actions',
     header: '',
     align: 'right',
-    width: onEdit ? 180 : 120,
-    render: (r) => {
-      const active = r.status === 'ACTIVE';
-      return (
-        <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-          {onEdit ? (
-            <Button size="small" color="inherit" onClick={() => onEdit(r)} sx={{ minWidth: 0, px: 1.25 }}>
-              Edit
-            </Button>
-          ) : null}
-          <Button
-            size="small"
-            color={active ? 'warning' : 'success'}
-            onClick={() => onToggle(r)}
-            sx={{ minWidth: 0, px: 1.25 }}
-          >
-            {active ? 'Deactivate' : 'Activate'}
-          </Button>
-        </Stack>
-      );
-    },
+    width: 56,
+    render: (r) => <RowActions row={r} onEdit={onEdit} onToggle={onToggle} />,
   };
 }
 

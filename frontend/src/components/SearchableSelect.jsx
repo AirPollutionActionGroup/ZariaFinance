@@ -15,6 +15,8 @@ export function SearchableSelect({
   error,
   // Optional: (option) => group label. Options must already be sorted by group.
   groupBy,
+  // Optional hint under the field; an error message takes its place.
+  helperText,
 }) {
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
@@ -81,7 +83,7 @@ export function SearchableSelect({
           label={label}
           placeholder={placeholder}
           error={Boolean(error)}
-          helperText={error || ' '}
+          helperText={error || helperText || ' '}
           fullWidth
         />
       )}

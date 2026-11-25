@@ -6,7 +6,11 @@ import com.ngo.finance.donor.validator.annotation.UniqueDonorCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
+import java.util.List;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
@@ -50,8 +54,8 @@ public class CreateDonorRequest {
 
     private String passportId;
 
-    /** Code of an active Document Type master row (e.g. PAN_CARD). */
-    private String documentType;
+    /** Id of an active Document Type master row (PAN Card, …); null = no ID document. */
+    private Long documentTypeId;
 
     private String documentNumber;
 
@@ -63,16 +67,11 @@ public class CreateDonorRequest {
 
     private String website;
 
-    @NotBlank(message = "SPOC Name is required")
-    private String spocNameOfThePerson;
-
-    @Column(nullable = true, length = 255)
-    private String spocPhoneNumber;
-
-    @Column(nullable = false, length = 255)
-    @NotBlank(message = "SPOC Email is required")
-    @Email(message = "SPOC Email must be valid")
-    private String spocEmail;
+    /** Points of contact: 1 to 10, exactly one primary (the first, if none is marked). */
+    @NotEmpty(message = "Add at least one point of contact")
+    @Size(max = 10, message = "A donor can have up to 10 points of contact")
+    @Valid
+    private List<DonorContactItem> contacts;
 
     private String address;
     private String address2;

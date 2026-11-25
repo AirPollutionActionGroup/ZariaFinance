@@ -50,7 +50,7 @@ public class DocumentTypeController {
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Rename a document type (its code never changes)")
+    @Operation(summary = "Update a document type")
     public ResponseEntity<DocumentTypeResponse> update(
             @PathVariable Long id, @Valid @RequestBody DocumentTypeRequest request) {
         return ResponseEntity.ok(documentTypeService.update(id, request));

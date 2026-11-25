@@ -1,4 +1,5 @@
-import { Box, Drawer, List, ListItemButton, ListItemText, Tooltip, Typography } from '@mui/material';
+import { useEffect } from 'react';
+import { Box, Drawer, List, ListItemButton, ListItemText, Tooltip, Typography, useMediaQuery, useTheme } from '@mui/material';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../core/auth/index.js';
 import { canViewModule } from '../../core/permissions/index.js';
@@ -11,11 +12,20 @@ import { layout } from '../../theme/tokens.js';
  * state. Content is derived entirely from the module registry filtered by the
  * current user's permissions — the shell knows nothing about individual
  * business domains.
+ *
+ * Below the md breakpoint it becomes a slide-out drawer (`mobileOpen` /
+ * `onClose`), opened from the menu button in the top bar.
  */
-export function SideNav() {
+export function SideNav({ mobileOpen = false, onClose }) {
   const { user } = useAuth();
   const location = useLocation();
   const sections = getNavSections(user, canViewModule);
+  const theme = useTheme();
+  const compact = useMediaQuery(theme.breakpoints.down('md'));
+  // Close the slide-out menu once a page is picked.
+  useEffect(() => {
+    if (compact && onClose) onClose();
+  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
   const brandName = user?.organisationName || 'Zariya';
 
   // Running index across every visible item → the 00 / 01 / 02 rail numbering.
@@ -24,7 +34,10 @@ export function SideNav() {
   return (
     <Drawer
       id="tour-sidenav"
-      variant="permanent"
+      variant={compact ? 'temporary' : 'permanent'}
+      open={compact ? mobileOpen : true}
+      onClose={onClose}
+      ModalProps={{ keepMounted: true }}
       sx={{
         width: layout.sidebarWidth,
         flexShrink: 0,
@@ -80,7 +93,7 @@ export function SideNav() {
                   pt: 1,
                   display: 'block',
                   fontSize: 9.5,
-                  color: '#000',
+                  color: 'text.primary',
                   borderBottom: '1px solid',
                   borderColor: 'divider',
                   pb: 0.75,

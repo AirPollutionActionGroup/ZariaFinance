@@ -9,7 +9,9 @@ public enum ScheduleType {
     MONTHLY("Monthly"),
     QUARTERLY("Quarterly"),
     HALF_YEARLY("Half-Yearly"),
-    YEARLY("Yearly");
+    YEARLY("Yearly"),
+    /** No fixed cadence: each tranche is released on its own expected date. */
+    DATED("Dated");
 
     private final String label;
 

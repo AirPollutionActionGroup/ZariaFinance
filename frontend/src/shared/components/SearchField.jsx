@@ -3,7 +3,7 @@ import { InputAdornment, TextField } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 
 /** Debounced search input used by list pages. */
-export function SearchField({ value, onChange, placeholder = 'Search…', delayMs = 300 }) {
+export function SearchField({ value, onChange, placeholder = 'Search…', delayMs = 300, size }) {
   const [draft, setDraft] = useState(value ?? '');
   const timerRef = useRef(null);
 
@@ -22,6 +22,7 @@ export function SearchField({ value, onChange, placeholder = 'Search…', delayM
       onChange={handleChange}
       placeholder={placeholder}
       fullWidth
+      size={size}
       slotProps={{
         input: {
           startAdornment: (

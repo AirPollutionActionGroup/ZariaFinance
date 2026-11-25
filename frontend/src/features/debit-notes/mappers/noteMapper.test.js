@@ -56,3 +56,18 @@ describe('noteMapper', () => {
     });
   });
 });
+
+describe('over-budget reason', () => {
+  it('reads the reason as a master row: name to show, id for the form', () => {
+    const note = fromNoteResponse({ id: 'DN-1', amount: 700, overBudgetReason: { id: '4', name: 'FX difference' } });
+    expect(note.reason).toBe('FX difference');
+    expect(note.reasonId).toBe('4');
+    expect(fromNoteResponse({ id: 'DN-2', amount: 10 }).reason).toBeNull();
+  });
+
+  it('sends the chosen reason by id', () => {
+    expect(toCreateNoteRequest({ amount: 700, overBudgetReasonId: '4' }).overBudgetReasonId).toBe(4);
+    expect(toCreateNoteRequest({ amount: 10, overBudgetReasonId: null }).overBudgetReasonId).toBeNull();
+  });
+});
+

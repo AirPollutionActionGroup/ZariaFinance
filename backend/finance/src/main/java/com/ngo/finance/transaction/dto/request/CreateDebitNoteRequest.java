@@ -37,8 +37,8 @@ public class CreateDebitNoteRequest {
     @Digits(integer = 16, fraction = 2, message = "Amount has too many digits")
     private BigDecimal amount;
 
-    @Size(max = 40)
-    private String reason;
+    /** Over-budget reason id (Masters → Over-budget reasons); required when the note takes the line over budget. */
+    private Long overBudgetReasonId;
 
     @NotNull(message = "Select a book")
     private ContributionType book;
@@ -68,6 +68,14 @@ public class CreateDebitNoteRequest {
 
     @Size(max = 255)
     private String reference;
+
+    /** Tally voucher type, e.g. "Payment" — optional, only with a voucher number. */
+    @Size(max = 50)
+    private String tallyVoucherType;
+
+    /** Tally voucher number — one debit note per Tally voucher. */
+    @Size(max = 100)
+    private String tallyVoucherNo;
 
     @Size(max = 1000)
     private String remarks;

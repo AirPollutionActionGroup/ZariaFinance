@@ -16,20 +16,30 @@ export const BUDGET_STATUS_TONE = Object.freeze({
 });
 
 /**
- * What a budget is planned for: one programme, or the organisation as a whole
- * (overheads, admin, shared costs). Either can be tied to one State.
+ * What a budget is planned for: one programme, one project (a programme record
+ * of type Project), or the organisation as a whole (overheads, admin, shared
+ * costs). Any of them can be tied to one State.
  */
+// Listed widest scope first: organisation → programme → project.
 export const BUDGET_TYPE = Object.freeze({
-  PROGRAMME: 'Programme-based',
   ORGANISATION: 'Organisation-based',
+  PROGRAMME: 'Programme-based',
+  PROJECT: 'Project-based',
 });
 
 export const BUDGET_TYPE_HINT = Object.freeze({
-  PROGRAMME: 'Planned for a single programme — its activities, staff and restricted grant spend.',
-  ORGANISATION: 'Planned for the organisation as a whole — overheads, admin and shared costs.',
+  ORGANISATION: 'Overheads, admin and shared costs',
+  PROGRAMME: "One programme's activities and grant spend",
+  PROJECT: 'One project under a programme',
 });
 
-export const BUDGET_TYPE_TONE = Object.freeze({ PROGRAMME: 'info', ORGANISATION: 'graphite' });
+export const BUDGET_TYPE_TONE = Object.freeze({ PROGRAMME: 'info', PROJECT: 'outlined', ORGANISATION: 'graphite' });
+
+/** Programme and Project budgets are tied to one programme record; Organisation ones are org-wide. */
+export const needsProgramme = (budgetType) => budgetType === 'PROGRAMME' || budgetType === 'PROJECT';
+
+/** Which programme records a budget type can pick: PROGRAMME → type Programme, PROJECT → type Project. */
+export const isProjectRecord = (programme) => String(programme?.type || '').toLowerCase() === 'project';
 
 /** Budgets saved before types existed were all programme budgets. */
 export const budgetTypeOf = (budget) => budget?.budgetType || 'PROGRAMME';

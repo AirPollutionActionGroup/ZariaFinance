@@ -36,6 +36,7 @@ export function filterCreditNotes(notes, filters) {
       n.paymentMode?.name,
       n.bankAccount?.name,
       n.reference,
+      n.tallyVoucherNo,
       n.remarks,
     ].some((text) => (text || '').toLowerCase().includes(q));
   });

@@ -23,6 +23,9 @@ public class GrantDetailsResponse {
 
     private String grantCode;
 
+    /** The agreement's number before the GA-{FY}-{nnn} format, if it had one. */
+    private String legacyCode;
+
     private Long donorId;
 
     private String donorName;

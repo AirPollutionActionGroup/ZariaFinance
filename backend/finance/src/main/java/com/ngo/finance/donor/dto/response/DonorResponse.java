@@ -40,7 +40,7 @@ public class DonorResponse {
 
     private String passportId;
 
-    private String documentType;
+    private Long documentTypeId;
 
     private String documentNumber;
 
@@ -50,11 +50,8 @@ public class DonorResponse {
 
     private String website;
 
-    private String spocNameOfThePerson;
 
-    private String spocPhoneNumber;
 
-    private String spocEmail;
 
     private String address;
 
@@ -78,6 +75,7 @@ public class DonorResponse {
 
     private Boolean isActive;
 
+    /** Points of contact, the primary first. */
     private List<DonorContactResponse> contacts;
 
     private LocalDateTime createdAt;

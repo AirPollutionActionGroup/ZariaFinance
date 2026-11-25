@@ -44,8 +44,8 @@ public class NoteResponse {
 
     private BigDecimal amount;
 
-    /** Debit notes only: why the line went over budget. */
-    private String reason;
+    /** Debit notes only: why the line went over budget — the reason's id and name. */
+    private RefDto overBudgetReason;
 
     private String book;
 
@@ -75,9 +75,18 @@ public class NoteResponse {
 
     private String reference;
 
+    /** The Tally voucher the note was booked as. */
+    private String tallyVoucherType;
+    private String tallyVoucherNo;
+
     private String remarks;
 
     private String attachmentName;
+
+    /** Credit notes on the FC book: the foreign side of the receipt (null otherwise). */
+    private String currency;
+    private BigDecimal foreignAmount;
+    private BigDecimal fxRate;
 
     private String createdBy;
 

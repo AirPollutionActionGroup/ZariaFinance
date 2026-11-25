@@ -10,6 +10,8 @@ import com.ngo.finance.donor.enums.RestrictionRuleType;
 import com.ngo.finance.donor.validator.annotation.ValidFundProfile;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 
 /**
@@ -88,6 +90,89 @@ public class FundProfileValidator implements ConstraintValidator<ValidFundProfil
         if (item.getDisbursementType() == DisbursementType.LUMP_SUM
                 && item.getReceivingDate() == null) {
             error(context, "Expected release date is required", "disbursementRules", d, "receivingDate");
+            valid = false;
+        }
+        valid = validateForeignContribution(item, context, d) && valid;
+        return valid;
+    }
+
+    /**
+     * FC book: currency, foreign amount, rate, rate date and source come as a
+     * set (or not at all, for INR). The INR total must be foreign amount × rate,
+     * and the tranches can't add up to more than the foreign amount.
+     */
+    private boolean validateForeignContribution(DisbursementRuleItem item, ConstraintValidatorContext context, int d) {
+        List<TrancheCriterionItem> tranches = item.getTrancheCriteria() == null ? List.of() : item.getTrancheCriteria();
+        boolean anyFc = item.getCurrency() != null || item.getForeignAmount() != null || item.getFxRate() != null
+                || item.getFxRateDate() != null || item.getFxRateSource() != null;
+
+        if (!anyFc) {
+            for (int c = 0; c < tranches.size(); c++) {
+                if (tranches.get(c).getForeignAmount() != null) {
+                    error(context, "A foreign tranche amount needs a foreign-currency commitment",
+                            "disbursementRules", d, "trancheCriteria", c, "foreignAmount");
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        boolean valid = true;
+        String currency = item.getCurrency() == null ? null : item.getCurrency().trim().toUpperCase();
+        if (currency == null || !currency.matches("[A-Z]{3}")) {
+            error(context, "Currency is required (3-letter code, e.g. USD)", "disbursementRules", d, "currency");
+            valid = false;
+        } else if ("INR".equals(currency)) {
+            error(context, "Currency must be a foreign currency, not INR", "disbursementRules", d, "currency");
+            valid = false;
+        }
+        if (item.getForeignAmount() == null || item.getForeignAmount().signum() <= 0) {
+            error(context, "Foreign amount must be greater than 0", "disbursementRules", d, "foreignAmount");
+            valid = false;
+        }
+        if (item.getFxRate() == null || item.getFxRate().signum() <= 0) {
+            error(context, "FX rate must be greater than 0", "disbursementRules", d, "fxRate");
+            valid = false;
+        }
+        if (item.getFxRateDate() == null) {
+            error(context, "Rate date is required", "disbursementRules", d, "fxRateDate");
+            valid = false;
+        }
+        if (item.getFxRateSource() == null) {
+            error(context, "FX rate source is required", "disbursementRules", d, "fxRateSource");
+            valid = false;
+        }
+        if (!valid) {
+            return false;
+        }
+
+        // INR total = foreign amount × rate, allowing ₹1 for rounding.
+        if (item.getTotalAmount() != null) {
+            BigDecimal expected = item.getForeignAmount().multiply(item.getFxRate());
+            if (expected.subtract(item.getTotalAmount()).abs().compareTo(BigDecimal.ONE) > 0) {
+                error(context, "Total amount committed must equal the foreign amount × FX rate ("
+                        + expected.setScale(2, RoundingMode.HALF_UP).toPlainString() + ")",
+                        "disbursementRules", d, "totalAmount");
+                valid = false;
+            }
+        }
+
+        BigDecimal foreignTotal = BigDecimal.ZERO;
+        for (int c = 0; c < tranches.size(); c++) {
+            BigDecimal amount = tranches.get(c).getForeignAmount();
+            if (amount != null) {
+                if (amount.signum() <= 0) {
+                    error(context, "Foreign tranche amount must be greater than 0",
+                            "disbursementRules", d, "trancheCriteria", c, "foreignAmount");
+                    valid = false;
+                }
+                foreignTotal = foreignTotal.add(amount);
+            }
+        }
+        if (foreignTotal.compareTo(item.getForeignAmount()) > 0) {
+            error(context, "Tranches add up to " + foreignTotal.toPlainString() + " " + currency
+                    + ", more than the " + item.getForeignAmount().toPlainString() + " " + currency + " committed",
+                    "disbursementRules", d, "trancheCriteria");
             valid = false;
         }
         return valid;

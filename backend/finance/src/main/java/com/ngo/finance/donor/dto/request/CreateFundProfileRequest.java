@@ -4,6 +4,7 @@ import com.ngo.finance.donor.enums.FundMode;
 import com.ngo.finance.donor.enums.CriterionType;
 import com.ngo.finance.donor.enums.DisbursementType;
 import com.ngo.finance.donor.enums.FundClass;
+import com.ngo.finance.donor.enums.FxRateSource;
 import com.ngo.finance.donor.enums.RepeatReminder;
 import com.ngo.finance.donor.enums.ReportingFrequency;
 import com.ngo.finance.donor.enums.RestrictionRuleType;
@@ -79,6 +80,9 @@ public class CreateFundProfileRequest {
 
         @NotNull(message = "State is required")
         private Long stateId;
+
+        /** Optional: just this city (it must be in stateId). Null = the whole state. */
+        private Long cityId;
     }
 
     @Data
@@ -113,6 +117,17 @@ public class CreateFundProfileRequest {
         /** Lump sum only — the single date the whole committed amount is released on. */
         private LocalDate receivingDate;
 
+        /*
+         * Foreign contribution (FC book): all five together, or none for an INR
+         * commitment. totalAmount must equal foreignAmount × fxRate (±₹1) — see
+         * FundProfileValidator.
+         */
+        private String currency;
+        private BigDecimal foreignAmount;
+        private BigDecimal fxRate;
+        private LocalDate fxRateDate;
+        private FxRateSource fxRateSource;
+
         @Valid
         @Builder.Default
         private List<TrancheCriterionItem> trancheCriteria = new ArrayList<>();
@@ -128,6 +143,9 @@ public class CreateFundProfileRequest {
         @NotNull(message = "Tranche amount is required")
         @Positive(message = "Tranche amount must be positive")
         private BigDecimal amountCriteria;
+
+        /** FC book only: this tranche in the commitment's foreign currency. */
+        private BigDecimal foreignAmount;
 
         @NotNull(message = "Expected release date is required")
         private LocalDate expectedReleaseDate;

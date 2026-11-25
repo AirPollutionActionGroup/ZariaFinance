@@ -1,10 +1,21 @@
 import { z } from 'zod';
 import { FUND_SOURCE_DOMICILE } from '../constants.js';
+import { MAX_CONTACTS, duplicateEmails, emptyContact } from '../lib/donorContacts.js';
+
+/** One point of contact row. */
+const contactSchema = z.object({
+  id: z.union([z.number(), z.null()]).optional(),
+  name: z.string().trim().min(1, 'Name is required').max(255, 'Name is too long'),
+  email: z.string().trim().min(1, 'Email is required').email('Email must be valid').max(255, 'Email is too long'),
+  phone: z.string().trim().max(30, 'Phone number is too long').optional().or(z.literal('')),
+  isPrimary: z.boolean(),
+});
 
 /**
  * Mirrors CreateDonorRequest bean validation:
- * donorCode/donorName/donorType/fundSourceDomicile/email/spocNameOfThePerson/
- * spocEmail @NotBlank or @NotNull, email/spocEmail @Email; everything else optional.
+ * donorCode/donorName/donorType/fundSourceDomicile/email @NotBlank or @NotNull,
+ * email @Email, and 1–10 points of contact (name + valid email each, emails
+ * not repeated); everything else optional.
  * Exception: `address` is required client-side only — CreateDonorRequest does
  * not enforce it server-side.
  * donorType is now a manageable master (see Master Configuration / DonorTypeMaster)
@@ -38,9 +49,15 @@ export const donorSchema = z.object({
   email: z.string().trim().min(1, 'Email is required').email('Email must be valid'),
   phoneNumber: z.string().trim().optional().or(z.literal('')),
   website: z.string().trim().optional().or(z.literal('')),
-  spocNameOfThePerson: z.string().trim().min(1, 'POC name is required'),
-  spocPhoneNumber: z.string().trim().optional().or(z.literal('')),
-  spocEmail: z.string().trim().min(1, 'POC email is required').email('POC email must be valid'),
+  contacts: z
+    .array(contactSchema)
+    .min(1, 'Add at least one point of contact')
+    .max(MAX_CONTACTS, `Up to ${MAX_CONTACTS} points of contact`)
+    .superRefine((rows, ctx) => {
+      duplicateEmails(rows).forEach((earlier, i) =>
+        ctx.addIssue({ code: 'custom', path: [i, 'email'], message: `This email is already on contact ${earlier + 1}` }),
+      );
+    }),
   address: z.string().trim().min(1, 'Street address is required'),
   address2: z.string().trim().optional().or(z.literal('')),
   cityId: z.union([z.number(), z.string()]).optional().or(z.literal('')).nullable(),
@@ -94,9 +111,7 @@ export const donorFormDefaults = {
   email: '',
   phoneNumber: '',
   website: '',
-  spocNameOfThePerson: '',
-  spocPhoneNumber: '',
-  spocEmail: '',
+  contacts: [emptyContact(true)],
   address: '',
   address2: '',
   cityId: '',

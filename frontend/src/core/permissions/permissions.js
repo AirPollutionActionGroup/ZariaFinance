@@ -40,7 +40,7 @@ export const ALL_MODULES = '*';
  *  - CEO: view + comment everywhere (governance oversight, no data entry).
  *  - Accounts / Finance Officer: view + edit + comment everywhere, and the
  *    operational approver for record lifecycles (grant approve/close).
- *  - Fund Raising Lead: view + edit + comment inside Donor & Donation Management only.
+ *  - Fund Raising Lead: view + edit + comment inside Donor Management (and the other modules listed) only.
  */
 const POLICY = Object.freeze({
   [ROLES.CEO]: {
@@ -51,7 +51,6 @@ const POLICY = Object.freeze({
   },
   [ROLES.FUNDRAISING_LEAD]: {
     'donor-management': new Set([ACTIONS.VIEW, ACTIONS.EDIT, ACTIONS.COMMENT]),
-    'donation-management': new Set([ACTIONS.VIEW, ACTIONS.EDIT, ACTIONS.COMMENT]),
     'user-requests': new Set([ACTIONS.VIEW, ACTIONS.EDIT, ACTIONS.COMMENT]),
     'organisation-register': new Set([ACTIONS.VIEW, ACTIONS.EDIT, ACTIONS.COMMENT]),
     'role-directory': new Set([ACTIONS.VIEW, ACTIONS.EDIT, ACTIONS.COMMENT]),

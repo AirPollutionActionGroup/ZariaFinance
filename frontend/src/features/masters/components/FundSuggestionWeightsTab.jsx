@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Box, Button, Grid, InputAdornment, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Grid, InputAdornment, Stack, TextField, Typography } from '@mui/material';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SaveIcon from '@mui/icons-material/Save';
 import { useAuth } from '../../../core/auth/index.js';
@@ -71,21 +71,17 @@ function WeightsForm({ saved }) {
 
   return (
     <Box>
-      <Paper variant="outlined" sx={{ p: { xs: 2, md: 3 }, borderRadius: 2 }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" sx={{ mb: 2 }}>
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>
-              Fund suggestion weights
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              When a debit note is raised, each eligible fund scores the points below; the highest score is suggested first.
-            </Typography>
-          </Box>
-          <Box sx={{ textAlign: { md: 'right' }, flexShrink: 0 }}>
+      <Box sx={{ px: { xs: 2, md: 3 }, pt: 2.5, pb: 3, borderTop: '1px solid var(--line)' }}>
+        {/* The page heading names this master; here, just how scoring works and the top score. */}
+        <Stack direction="row" spacing={2} justifyContent="space-between" alignItems="center" sx={{ mb: 2.5, pb: 2, borderBottom: '1px solid var(--line)' }}>
+          <Typography variant="body2" color="text.secondary">
+            Each eligible fund scores the points below when a debit note is raised; the highest score is suggested first.
+          </Typography>
+          <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
               Highest possible score
             </Typography>
-            <Typography variant="h5" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+            <Typography sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
               {maxScore(values)}
             </Typography>
           </Box>
@@ -151,7 +147,7 @@ function WeightsForm({ saved }) {
             {update.isPending ? 'Saving…' : 'Save weights'}
           </Button>
         </Stack>
-      </Paper>
+      </Box>
 
       <ConfirmDialog
         open={confirmReset}

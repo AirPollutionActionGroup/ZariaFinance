@@ -30,7 +30,7 @@ public class OutflowRowResponse {
 
     private String financialYear;
 
-    /** PROGRAMME | ORGANISATION */
+    /** PROGRAMME | PROJECT | ORGANISATION */
     private String budgetType;
 
     /** Programme name, or "Organisation-wide". */

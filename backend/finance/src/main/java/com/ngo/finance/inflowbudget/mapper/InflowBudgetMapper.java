@@ -5,6 +5,7 @@ import com.ngo.finance.donor.entity.DonorDisbursementRule;
 import com.ngo.finance.donor.entity.DonorFundProfile;
 import com.ngo.finance.donor.entity.DonorMaster;
 import com.ngo.finance.donor.entity.DonorTrancheCriterion;
+import com.ngo.finance.donor.entity.ForeignAmount;
 import com.ngo.finance.donor.enums.FundMode;
 import com.ngo.finance.inflowbudget.dto.response.InflowBudgetLineResponse;
 import com.ngo.finance.programme.entity.Programme;
@@ -40,6 +41,11 @@ public class InflowBudgetMapper {
 
         return InflowBudgetLineResponse.builder()
                 .id(criterion.getId())
+                .trancheCode(criterion.getTrancheCode())
+                .fundProfileId(profile.getId())
+                .profileCode(profile.getProfileCode())
+                .fcraApplicable(donor.getFcraApplicable())
+                .foreign(foreignInfo(criterion, rule))
                 .line(buildLine(criterion, profile))
                 .fundingSource(profile.getFundMode() != null ? profile.getFundMode().name() : FundMode.RESTRICTED.name())
                 .donor(donor.getDonorName())
@@ -69,6 +75,31 @@ public class InflowBudgetMapper {
                 .reduce((a, b) -> a + "; " + b)
                 .orElse(null);
         return joined;
+    }
+
+    /**
+     * The FC side of the line, or null for an INR commitment. A lump sum's single
+     * tranche may carry no foreign amount of its own; it is the whole commitment.
+     */
+    private InflowBudgetLineResponse.ForeignInfo foreignInfo(DonorTrancheCriterion criterion,
+            DonorDisbursementRule rule) {
+        ForeignAmount fc = rule.getForeignContribution();
+        if (fc == null) {
+            return null;
+        }
+        BigDecimal expected = criterion.getForeignAmount() != null
+                ? criterion.getForeignAmount()
+                : rule.getDonorTrancheCriteria().size() == 1 ? fc.getForeignAmount() : null;
+        return InflowBudgetLineResponse.ForeignInfo.builder()
+                .currency(fc.getCurrency())
+                .expectedForeignAmount(expected)
+                .commitmentForeignAmount(fc.getForeignAmount())
+                .commitmentInrAmount(rule.getTotalAmount())
+                .fxRate(fc.getFxRate())
+                .fxRateDate(fc.getFxRateDate())
+                .fxRateSource(fc.getFxRateSource() != null ? fc.getFxRateSource().name() : null)
+                .fxRateSourceLabel(fc.getFxRateSource() != null ? fc.getFxRateSource().getLabel() : null)
+                .build();
     }
 
     private String buildLine(DonorTrancheCriterion criterion, DonorFundProfile profile) {

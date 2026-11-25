@@ -13,4 +13,10 @@ export const creditNoteApi = {
 
   /** POST /api/v1/credit-notes — body: CreateCreditNoteRequest → NoteResponse (201). */
   create: (payload) => http.post('/v1/credit-notes', payload),
+
+  /**
+   * POST /api/v1/credit-notes/import — CSV rows → a result per row. With
+   * dryRun: true nothing is saved; otherwise the selected valid rows are.
+   */
+  importRows: (payload) => http.post('/v1/credit-notes/import', payload),
 };

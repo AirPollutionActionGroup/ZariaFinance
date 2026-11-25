@@ -13,9 +13,8 @@ import { useAuth } from '../../../core/auth/index.js';
 import { ErrorState, LoadingState, PageHeader, StatusChip } from '../../../shared/components/index.js';
 import { formatInrExact } from '../../../lib/format/currency.js';
 import { formatDate, formatDateTime } from '../../../lib/format/date.js';
-import { BOOK, BOOK_TONE } from '../../donation-management/constants.js';
-import { useFundProfile } from '../../donor-management/hooks/useFundProfiles.js';
-import { useGrantByFundProfileId } from '../../donor-management/hooks/useGrants.js';
+import { BOOK, BOOK_TONE } from '../../../shared/constants/book.js';
+import { useFundingRecord } from '../../funding-agreements/hooks/useFunding.js';
 import { useInflowBudgetLines } from '../../inflow-budget/hooks/useInflowBudget.js';
 import { useOutflowRow } from '../../outflow-budget/hooks/useOutflow.js';
 import { rowDebits, rowRemaining, rowSpent } from '../../outflow-budget/lib/spent.js';
@@ -25,7 +24,7 @@ import { Fact, Figure, MONEY_SX, Panel, TermRow } from '../../credit-notes/compo
 import { useDebitNote, useDebitNotes } from '../hooks/useDebitNotes.js';
 import { debitTotalsByLine } from '../lib/debitTotals.js';
 import { computeGrantBalance } from '../lib/grantBalance.js';
-import { PAYEE_CATEGORIES, reasonLabel } from '../constants.js';
+import { PAYEE_CATEGORIES } from '../constants.js';
 
 const payeeCategoryLabel = (code) => PAYEE_CATEGORIES.find((c) => c.value === code)?.label || '';
 const signedInr = (v) => (v < 0 ? `−${formatInrExact(-v)}` : formatInrExact(v));
@@ -90,7 +89,7 @@ function SummaryBanner({ note, line }) {
             {note.book ? <StatusChip label={BOOK[note.book] ? `${note.book} · ${BOOK[note.book]}` : note.book} tone={BOOK_TONE[note.book]} /> : '—'}
           </Fact>
           <Fact label="Budget">
-            {note.reason ? <StatusChip label={`Over · ${reasonLabel(note.reason)}`} tone="warning" /> : <StatusChip label="Within budget" tone="neutral" />}
+            {note.reason ? <StatusChip label={`Over · ${note.reason}`} tone="warning" /> : <StatusChip label="Within budget" tone="neutral" />}
           </Fact>
           <Fact label="Paid to">{note.payee?.name || '—'}</Fact>
         </Box>
@@ -241,11 +240,12 @@ function PrintableNote({ note, line, organisation }) {
           {row('Book', note.book || line?.book)}
           {row('Budget line', `${note.outflowLineId} — ${line?.line || note.lineDescription || '—'}`)}
           {row('Budget', line ? `${line.budgetName} · ${line.scope}` : '')}
-          {row('Reason', reasonLabel(note.reason) || '— (within budget)')}
+          {row('Reason', note.reason || '— (within budget)')}
           {row('Payee', note.payee ? `${note.payee.name}${note.payeeCategory ? ` (${payeeCategoryLabel(note.payeeCategory)})` : ''}` : '')}
           {row('Payment mode', note.paymentMode?.name)}
           {row('Bank account', note.bankAccount?.name)}
           {row('Reference no.', note.reference)}
+          {note.tallyVoucherNo ? row('Tally voucher', [note.tallyVoucherType, note.tallyVoucherNo].filter(Boolean).join(' ')) : null}
           {row('Group / Ledger', [note.group?.name, note.ledger?.name].filter(Boolean).join(' ▸ '))}
           {row('Donor', note.donor?.name)}
           {row('Fund profile', note.fundProfile?.name)}
@@ -281,8 +281,10 @@ export function DebitNoteDetailPage() {
 
   // ── Live balance on the fund this note was charged to (same maths as the form) ──
   const fundProfileId = note?.fundProfile?.id ?? undefined;
-  const fundProfileQuery = useFundProfile(fundProfileId);
-  const grantQuery = useGrantByFundProfileId(fundProfileId);
+  // The fund's terms and agreement in one call (GET /funding/{id}).
+  const fundRecord = useFundingRecord(fundProfileId);
+  const fundProfileQuery = { data: fundRecord.profile, isLoading: fundRecord.query.isLoading };
+  const grantQuery = { data: fundRecord.grant };
   const inflowLinesQuery = useInflowBudgetLines();
   const inflowLinesById = useMemo(() => {
     const map = new Map();
@@ -379,7 +381,7 @@ export function DebitNoteDetailPage() {
                     <Typography variant="body2">{line.budgetName} · {line.scope}</Typography>
                   </Stack>
                 </TermRow>
-                <TermRow label="Over-budget reason" last>{reasonLabel(note.reason) || '— (within budget)'}</TermRow>
+                <TermRow label="Over-budget reason" last>{note.reason || '— (within budget)'}</TermRow>
                 <BudgetImpact line={line} debitTotals={debitTotals} note={note} />
               </>
             ) : (
@@ -405,6 +407,9 @@ export function DebitNoteDetailPage() {
             <TermRow label="Payment mode">{note.paymentMode?.name || '—'}</TermRow>
             <TermRow label="Bank account">{note.bankAccount?.name || '—'}</TermRow>
             <TermRow label="Reference no.">{note.reference || '—'}</TermRow>
+            {note.tallyVoucherNo ? (
+              <TermRow label="Tally voucher">{[note.tallyVoucherType, note.tallyVoucherNo].filter(Boolean).join(' ')}</TermRow>
+            ) : null}
             <TermRow label="Group ▸ Ledger" last>
               {[note.group?.name, note.ledger?.name].filter(Boolean).join(' ▸ ') || '—'}
             </TermRow>

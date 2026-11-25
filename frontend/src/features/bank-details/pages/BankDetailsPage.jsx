@@ -22,7 +22,7 @@ import AccountBalanceOutlinedIcon from '@mui/icons-material/AccountBalanceOutlin
 import PowerSettingsNewOutlinedIcon from '@mui/icons-material/PowerSettingsNewOutlined';
 import { useNavigate } from 'react-router-dom';
 import { ConfirmDialog, DataTable, PageHeader, SearchField, StatusChip } from '../../../shared/components/index.js';
-import { BOOK, BOOK_TONE } from '../../donation-management/constants.js';
+import { BOOK, BOOK_TONE } from '../../../shared/constants/book.js';
 import { useBankDetails, useCreateBankDetail, useBankDetailLifecycle } from '../hooks/useBankDetails.js';
 
 const STATUS_TONE = { ACTIVE: 'success', INACTIVE: 'error' };

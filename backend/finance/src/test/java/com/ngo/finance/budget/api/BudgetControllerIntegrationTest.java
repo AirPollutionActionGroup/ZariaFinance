@@ -21,6 +21,7 @@ import com.ngo.finance.budget.enums.BudgetType;
 import com.ngo.finance.common.enums.ContributionType;
 import com.ngo.finance.financialYear.entity.FinancialYear;
 import com.ngo.finance.financialYear.repository.FinancialYearRepository;
+import com.ngo.finance.programme.ProgrammeTypes;
 import com.ngo.finance.programme.entity.Programme;
 import com.ngo.finance.programme.repository.ProgrammeRepository;
 import java.math.BigDecimal;
@@ -155,6 +156,35 @@ public class BudgetControllerIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("SUBMITTED"))
                 .andExpect(jsonPath("$.history[*].status", contains("DRAFT", "SUBMITTED")));
+    }
+
+    @Test
+    public void testCreate_ProjectBudgetNeedsAProjectRecord() throws Exception {
+        Long projectId = programmeRepository.save(Programme.builder()
+                .programmeCode("PRJ-BUDGET-IT")
+                .programmeName("Budget IT Project")
+                .type(ProgrammeTypes.PROJECT)
+                .parentProgrammeId(programmeId)
+                .build()).getId();
+
+        SaveBudgetRequest request = programmeBudget(List.of(line(PERSONNEL, "Project staff", "10", "0")));
+        request.setBudgetType(BudgetType.PROJECT);
+        request.setProgrammeId(projectId);
+        postBudget(request)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.budgetType").value("PROJECT"))
+                .andExpect(jsonPath("$.programmeId").value(projectId))
+                .andExpect(jsonPath("$.scope").value("Budget IT Project"));
+
+        // A project budget can't point at a programme, nor a programme budget at a project.
+        request.setProgrammeId(programmeId);
+        postBudget(request).andExpect(status().isBadRequest());
+        SaveBudgetRequest programmeOnProject = programmeBudget(List.of(line(PERSONNEL, "Staff", "10", "0")));
+        programmeOnProject.setProgrammeId(projectId);
+        postBudget(programmeOnProject).andExpect(status().isBadRequest());
+        // …and it needs one at all.
+        request.setProgrammeId(null);
+        postBudget(request).andExpect(status().isBadRequest());
     }
 
     @Test

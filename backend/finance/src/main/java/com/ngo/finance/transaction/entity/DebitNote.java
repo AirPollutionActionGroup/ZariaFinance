@@ -3,6 +3,7 @@ package com.ngo.finance.transaction.entity;
 import com.ngo.finance.budget.entity.BudgetLine;
 import com.ngo.finance.common.entity.AuditEntity;
 import com.ngo.finance.common.enums.ContributionType;
+import com.ngo.finance.masters.overbudgetreason.entity.OverBudgetReason;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -49,8 +50,10 @@ public class DebitNote extends AuditEntity {
     @Column(nullable = false, precision = 18, scale = 2)
     private BigDecimal amount;
 
-    @Column(length = 40)
-    private String reason;
+    /** Why the note took its line over budget (Masters → Over-budget reasons); null within budget. */
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "over_budget_reason_id")
+    private OverBudgetReason overBudgetReason;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 2)
@@ -109,6 +112,13 @@ public class DebitNote extends AuditEntity {
 
     @Column(length = 255)
     private String reference;
+
+    /** The Tally voucher this payment was booked as (type + number identify it; unique). */
+    @Column(name = "tally_voucher_type", length = 50)
+    private String tallyVoucherType;
+
+    @Column(name = "tally_voucher_no", length = 100)
+    private String tallyVoucherNo;
 
     @Column(length = 1000)
     private String remarks;

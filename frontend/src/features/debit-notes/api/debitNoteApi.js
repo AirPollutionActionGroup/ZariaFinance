@@ -13,4 +13,7 @@ export const debitNoteApi = {
 
   /** POST /api/v1/debit-notes — body: CreateDebitNoteRequest → NoteResponse (201). */
   create: (payload) => http.post('/v1/debit-notes', payload),
+
+  /** POST /api/v1/debit-notes/import — CSV rows; dryRun checks only → DebitNoteImportResponse. */
+  importRows: (payload) => http.post('/v1/debit-notes/import', payload),
 };

@@ -20,6 +20,15 @@ import lombok.NoArgsConstructor;
 public class InflowBudgetLineResponse {
 
     private Long id;
+    /** The tranche's permanent code, e.g. FP-2026-001-T2. */
+    private String trancheCode;
+    /** The funding record (fund profile) this line belongs to — /funding/{fundProfileId}. */
+    private Long fundProfileId;
+    private String profileCode;
+    /** FC book only: whether the donor falls under FCRA. */
+    private Boolean fcraApplicable;
+    /** FC book only, when the commitment was entered in a foreign currency; null for LC. */
+    private ForeignInfo foreign;
     private String line;
     private String fundingSource; // RESTRICTED | UNRESTRICTED
     private String donor;
@@ -39,6 +48,25 @@ public class InflowBudgetLineResponse {
 
     /** Every instalment (credit note), oldest first. */
     private List<ReceiptItem> receipts;
+
+    /** The foreign-currency side of an FC line: what the INR amounts were derived from. */
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ForeignInfo {
+        private String currency;
+        /** This tranche in the foreign currency. */
+        private BigDecimal expectedForeignAmount;
+        /** The whole commitment, in the foreign currency and in INR. */
+        private BigDecimal commitmentForeignAmount;
+        private BigDecimal commitmentInrAmount;
+        /** ₹ per one unit of currency, and the day / source of that rate. */
+        private BigDecimal fxRate;
+        private LocalDate fxRateDate;
+        private String fxRateSource;
+        private String fxRateSourceLabel;
+    }
 
     @Data
     @Builder

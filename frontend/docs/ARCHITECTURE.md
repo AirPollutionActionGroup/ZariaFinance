@@ -156,7 +156,7 @@ validation errors. Repositories are the only Axios consumers.
 ## 10. Business logic
 
 Lives in feature `services/` (pure orchestration + domain rules such as
-`grantService.availableActions`) and `mappers/` (DTO ↔ view/form models —
+`agreementActions` in `funding-agreements/lib/fundingRecords.js`) and `mappers/` (DTO ↔ view/form models —
 backend names preserved, only null-normalisation and display labels added).
 Dashboard aggregation is a pure function over real endpoint data — the
 platform renders no number a backend record cannot justify.
@@ -240,11 +240,11 @@ cross-feature contact is limited to public `index.jsx` exports.
 - **Donors**: register list (search, status/fund-class chips), create, edit
   (code immutable), detail (profile, contacts, grants), activate/deactivate
   with confirmation. Endpoints: all six of `DonorController`.
-- **Grants**: pipeline list (search), create (donor picked from live register;
-  programmeId numeric pending gap #4), detail with lifecycle actions
-  approve/activate/close mapped to `GrantController` transitions and gated on
-  the APPROVE permission; grant editing intentionally absent (backend stub,
-  gap #5).
+- **Funding Agreements** (`/funding`): a fund profile and its grant agreement
+  as one record — list, create/edit in one form, detail with the agreement's
+  status steps (approve / hold / resume / complete / close / activate) on
+  `FundingController` (`PATCH /api/v1/funding/{id}/<step>`), gated on the
+  APPROVE permission, and a change history of every save and status step.
 - **Documents**: per-grant register, metadata upload (path-based per backend
   contract, gap #6), versions display, delete with confirmation.
 - Full layer stack with tests at mapper/service/schema/page level.

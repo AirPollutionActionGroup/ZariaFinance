@@ -51,7 +51,7 @@ export function fromBudgetResponse(dto) {
  * (`draft.financialYearId`); blank quarters are sent as 0; line ids aren't sent (lines are replaced).
  */
 export function toSaveBudgetRequest(draft, { submit = false, actor } = {}) {
-  const isProgramme = draft.budgetType === 'PROGRAMME';
+  const isProgramme = draft.budgetType === 'PROGRAMME' || draft.budgetType === 'PROJECT';
   return {
     name: draft.name.trim(),
     financialYearId: draft.financialYearId ?? null,

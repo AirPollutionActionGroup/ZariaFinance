@@ -92,9 +92,27 @@ public class CreditNote extends AuditEntity {
     @Column(length = 255)
     private String reference;
 
+    /** The Tally voucher this receipt was booked as (type + number identify it; unique). */
+    @Column(name = "tally_voucher_type", length = 50)
+    private String tallyVoucherType;
+
+    @Column(name = "tally_voucher_no", length = 100)
+    private String tallyVoucherNo;
+
     @Column(length = 1000)
     private String remarks;
 
     @Column(name = "attachment_name")
     private String attachmentName;
+
+    /** FC receipts only: what arrived in the donor's currency, and the rate it was converted at. */
+    @Column(name = "currency", length = 3)
+    private String currency;
+
+    @Column(name = "foreign_amount", precision = 19, scale = 2)
+    private BigDecimal foreignAmount;
+
+    /** ₹ per one unit of currency, as realised by the bank. amount = foreignAmount × fxRate. */
+    @Column(name = "fx_rate", precision = 19, scale = 4)
+    private BigDecimal fxRate;
 }
