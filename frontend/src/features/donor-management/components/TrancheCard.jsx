@@ -4,21 +4,19 @@ import {
   Box,
   Button,
   Card,
-  CardContent,
-  Chip,
-  Divider,
   FormControlLabel,
   Grid,
+  IconButton,
   InputAdornment,
   Stack,
   Switch,
-  TextField,
+  Tooltip,
   Typography,
-  useTheme,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import { Controller, useFieldArray, useWatch } from 'react-hook-form';
 import { RhfTextField } from '../../../shared/components/index.js';
 import { formatInrExact } from '../../../lib/format/currency.js';
@@ -27,13 +25,101 @@ import { CriterionFields } from './CriterionFields.jsx';
 import { CURRENCY_SYMBOL, formatForeign, inrFromForeign } from './ForeignContributionFields.jsx';
 import { criterionTypeLabel, emptyCriterion } from '../mappers/disbursementMapper.js';
 
-/** Designation id → its display name, for the collapsed-card summary text. */
+const SMALL_CAPS = { fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'text.secondary' };
+
+/** Designation id → its display name, for the criterion tooltip. */
 function roleName(options, id) {
   return options.find((o) => String(o.value) === String(id))?.label || '';
 }
 
+/** Criteria the system checks itself (signing, % spent) read green; the rest are neutral. */
+const SYSTEM_CRITERIA = ['UTILISATION_THRESHOLD', 'ON_SIGNING'];
+
+/** One release criterion as a small chip; the details (who verifies, reminders) sit in its tooltip. */
+function CriterionChip({ c, verificationRoleOptions, responsibleRoleOptions }) {
+  const sys = SYSTEM_CRITERIA.includes(c.criterionType);
+  const detail = c.milestoneName || (c.utilisationPercent ? `${c.utilisationPercent}% spent` : '');
+  const tip = [
+    c.verificationRoleId ? `Verified by ${roleName(verificationRoleOptions, c.verificationRoleId)}` : null,
+    c.utilisationPercent ? `${c.utilisationPercent}% of ${c.triggerBasis || 'the previous tranche'}` : null,
+    c.hasReminder && c.reminder?.reminderLeadDays
+      ? `Reminder ${c.reminder.reminderLeadDays} days before to ${roleName(responsibleRoleOptions, c.reminder.responsibleRoleId) || 'the responsible person'}${c.reminder.escalateToDeputy ? ' (escalates)' : ''}`
+      : null,
+    c.met ? 'Met' : null,
+  ].filter(Boolean).join(' · ');
+  const chip = (
+    <Box
+      component="span"
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 0.5,
+        px: 1,
+        py: 0.25,
+        borderRadius: 1,
+        fontSize: 12,
+        fontWeight: 600,
+        lineHeight: 1.6,
+        whiteSpace: 'nowrap',
+        maxWidth: '100%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        bgcolor: sys ? 'var(--ok-bg)' : 'var(--card2)',
+        color: sys ? 'var(--ok)' : 'text.primary',
+        border: '1px solid',
+        borderColor: sys ? 'transparent' : 'var(--line)',
+      }}
+    >
+      {c.met ? <CheckRoundedIcon sx={{ fontSize: 14 }} /> : null}
+      {c.criterionType ? criterionTypeLabel(c.criterionType) : 'Condition not set'}
+      {detail ? <Box component="span" sx={{ fontWeight: 400, color: 'text.secondary' }}>· {detail}</Box> : null}
+    </Box>
+  );
+  return tip ? <Tooltip title={tip} describeChild>{chip}</Tooltip> : chip;
+}
+
+/** The tranche's number badge: its permanent T-number once saved, NEW before. */
+function Badge({ tag, active }) {
+  return (
+    <Box
+      sx={{
+        minWidth: 34,
+        height: 26,
+        px: 0.75,
+        flexShrink: 0,
+        borderRadius: 1.5,
+        display: 'grid',
+        placeItems: 'center',
+        fontFamily: 'monospace',
+        fontWeight: 700,
+        fontSize: 12,
+        bgcolor: active ? 'var(--ink)' : 'var(--card2)',
+        color: active ? 'var(--card)' : 'text.primary',
+        border: active ? 'none' : '1px solid var(--line)',
+      }}
+    >
+      {tag}
+    </Box>
+  );
+}
+
+function Pill({ children, tone = 'neutral' }) {
+  const tones = {
+    neutral: { bgcolor: 'var(--card2)', color: 'text.secondary', borderColor: 'var(--line)' },
+    ok: { bgcolor: 'var(--ok-bg)', color: 'var(--ok)', borderColor: 'transparent' },
+  };
+  return (
+    <Box component="span" sx={{ px: 0.75, borderRadius: 1, fontSize: 11, fontWeight: 600, lineHeight: 1.7, border: '1px solid', ...tones[tone] }}>
+      {children}
+    </Box>
+  );
+}
+
 /**
- * Single Tranche Card component matching the exact prototype HTML/UI spec.
+ * One tranche of the payment schedule. Collapsed: a single row — number,
+ * expected date, release criteria, amount and share, edit / delete.
+ * Expanded: the editor for its amount, date, "final" flag and criteria.
+ * Edits go straight into the form; they are saved with the whole record.
  */
 export function TrancheCard({
   control,
@@ -42,9 +128,8 @@ export function TrancheCard({
   expanded,
   onToggleExpanded,
   onRemove,
-  frequencyLabel,
-  lumpSum,
-  isFinal: isFinalProp,
+  share = null,
+  lumpSum = false,
   singleCriterion = false,
   verificationRoleOptions = [],
   responsibleRoleOptions = [],
@@ -53,8 +138,6 @@ export function TrancheCard({
   fx = null,
   setValue,
 }) {
-  const theme = useTheme();
-  const isDarkMode = theme.palette.mode === 'dark';
   const criteria = useFieldArray({ control, name: `${path}.criteria` });
   const tranche = useWatch({ control, name: path });
   const received = Boolean(tranche?.received);
@@ -68,246 +151,97 @@ export function TrancheCard({
   }, [derivedInr, path, setValue, received]);
   const foreignLabel = fx && Number(tranche?.fcAmount) > 0 ? formatForeign(fx.currency, tranche.fcAmount) : null;
 
-  const tag = `T${index + 1}`;
-  // trancheName is a form-only label (never persisted), so a saved tranche falls back to its position.
-  const title = lumpSum ? 'Lump sum release' : (tranche?.trancheName || `Tranche ${index + 1}`);
+  // Saved tranches carry a permanent code (FP-2026-001-T2): the badge shows its
+  // number, which needn't match the position. Unsaved ones get theirs on save.
+  const code = tranche?.trancheCode || '';
+  const tag = code ? code.slice(code.lastIndexOf('-') + 1) : 'NEW';
+  const title = lumpSum ? 'Lump sum release' : `Tranche ${index + 1}`;
+  const canRemove = !lumpSum && !received;
+  const sharePct = share != null && Number.isFinite(share) ? Math.round(share * 100) : null;
+  const amountNote = [foreignLabel, sharePct != null ? `${sharePct}%` : null].filter(Boolean).join(' · ');
+  const date = tranche?.expectedReleaseDate ? formatDate(tranche.expectedReleaseDate) : 'Date not set';
+  // Rows still waiting for a type (a fresh "Add criterion") don't count yet.
+  const list = (tranche?.criteria || []).filter((c) => c?.criterionType);
 
-  // COLLAPSED SUMMARY CARD
+  const amountBlock = (
+    <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+      <Typography sx={{ fontWeight: 700, fontSize: 15, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+        {formatInrExact(Number(tranche?.amount) || 0)}
+      </Typography>
+      {amountNote ? (
+        <Typography sx={{ fontSize: 12, color: 'text.secondary', whiteSpace: 'nowrap' }}>{amountNote}</Typography>
+      ) : null}
+    </Box>
+  );
+
+  // ── Collapsed: one row.
   if (!expanded) {
     return (
       <Card
         variant="outlined"
-        sx={{
-          borderRadius: 2.5,
-          border: '1px solid',
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
-          overflow: 'hidden',
-          mb: 2,
-        }}
+        sx={{ mb: 1.25, borderRadius: 2, borderColor: 'var(--line)', transition: 'border-color .15s', '&:hover': { borderColor: 'text.disabled' } }}
       >
-        {/* Card Header */}
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.5,
-            p: 2,
-            px: 2.5,
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-            bgcolor: 'var(--card2, #fbfbf9)',
-          }}
-        >
-          <Box
-            sx={{
-              fontFamily: 'monospace',
-              fontWeight: 700,
-              bgcolor: '#181818',
-              color: '#fff',
-              px: 1.2,
-              py: 0.4,
-              borderRadius: 1.5,
-              fontSize: 12,
-            }}
-          >
-            {tag}
-          </Box>
-          <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: 14 }}>
-            {title}
-          </Typography>
-          {received ? <Chip size="small" color="success" label="Received" sx={{ ml: 1 }} /> : null}
-          <Typography
-            variant="h6"
-            sx={{
-              ml: 'auto',
-              fontFamily: 'monospace',
-              fontWeight: 700,
-              fontSize: 16,
-            }}
-          >
-            {foreignLabel ? (
-              <Box component="span" sx={{ color: 'text.secondary', fontWeight: 500, fontSize: 13, mr: 1 }}>
-                {foreignLabel} ·
-              </Box>
-            ) : null}
-            {formatInrExact(tranche?.amount || 0)}
-          </Typography>
-        </Box>
-
-        {/* Card Body */}
-        <CardContent sx={{ p: 2.5 }}>
-          <Stack spacing={1.5}>
-            <Stack direction="row" spacing={3} sx={{ fontSize: 13 }}>
-              <Box>
-                <Typography component="span" sx={{ color: 'text.secondary' }}>Expected release: </Typography>
-                <Typography component="span" sx={{ fontWeight: 600 }}>
-                  {tranche?.expectedReleaseDate ? formatDate(tranche.expectedReleaseDate) : isFinalProp ? 'N/A (final tranche)' : '—'}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography component="span" sx={{ color: 'text.secondary' }}>Frequency: </Typography>
-                <Typography component="span" sx={{ fontWeight: 600 }}>
-                  {frequencyLabel || (lumpSum ? 'Not applicable' : '—')}
-                </Typography>
-              </Box>
-            </Stack>
-
-            <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
-
-            <Box>
-              <Typography
-                variant="caption"
-                sx={{
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.08em',
-                  color: 'text.secondary',
-                  fontWeight: 700,
-                  display: 'block',
-                  mb: 1,
-                }}
-              >
-                Release criteria
+        <Stack direction="row" alignItems="center" sx={{ px: 2, py: 1.5, columnGap: 2, rowGap: 1, flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
+          <Badge tag={tag} />
+          <Box sx={{ width: { md: 150 }, flexShrink: 0, minWidth: 0 }}>
+            <Typography sx={{ fontWeight: 600, fontSize: 14, color: tranche?.expectedReleaseDate ? 'text.primary' : 'text.disabled' }}>{date}</Typography>
+            <Stack direction="row" spacing={0.75} alignItems="center" sx={{ mt: 0.25 }}>
+              <Typography sx={{ fontSize: 11.5, fontFamily: 'monospace', color: 'text.secondary' }} noWrap>
+                {code || 'Not saved yet'}
               </Typography>
-
-              <Stack spacing={1}>
-                {(tranche?.criteria || []).map((c, i) => {
-                  const sys = c.criterionType === 'UTILISATION_THRESHOLD' || c.criterionType === 'ON_SIGNING';
-                  return (
-                    <Stack key={c.id ?? i} direction="row" spacing={1} sx={{ alignItems: 'baseline', fontSize: 12.5 }}>
-                      <Chip
-                        label={criterionTypeLabel(c.criterionType).toUpperCase()}
-                        size="small"
-                        sx={{
-                          fontWeight: 700,
-                          fontSize: 10.5,
-                          borderRadius: 1,
-                          bgcolor: sys ? '#E3F3EA' : '#181818',
-                          color: sys ? '#1f7a4d' : '#fff',
-                          border: sys ? '1px solid #bfe0cc' : 'none',
-                        }}
-                      />
-                      <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: 12.5 }}>
-                        {c.milestoneName ? `"${c.milestoneName}"` : ''}
-                        {c.verificationRoleId
-                          ? ` · verified by ${roleName(verificationRoleOptions, c.verificationRoleId)}`
-                          : ''}
-                        {c.utilisationPercent ? `${c.utilisationPercent}% · ${c.triggerBasis || 'Previous Tranche'}` : ''}
-                        {c.hasReminder && c.reminder?.reminderLeadDays
-                          ? ` · reminder ${c.reminder.reminderLeadDays}d before to ${roleName(responsibleRoleOptions, c.reminder.responsibleRoleId) || 'Responsible'}${c.reminder.escalateToDeputy ? ' (escalates)' : ''}`
-                          : ''}
-                        {c.met ? ' · met' : ''}
-                      </Typography>
-                    </Stack>
-                  );
-                })}
-                {(tranche?.criteria || []).length === 0 ? (
-                  <Typography variant="caption" color="text.secondary">
-                    No release criteria specified yet.
-                  </Typography>
-                ) : null}
-              </Stack>
-            </Box>
-          </Stack>
-
-          {/* Footer Actions */}
-          <Stack direction="row" spacing={1} sx={{ mt: 2.5, pt: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={onToggleExpanded}
-              sx={{ fontWeight: 600, color: 'text.primary', borderColor: 'divider' }}
-            >
-              Edit
-            </Button>
-            {!lumpSum && !received ? (
-              <Button
-                size="small"
-                color="error"
-                onClick={onRemove}
-                sx={{ fontWeight: 500 }}
-              >
-                Delete
-              </Button>
+              {tranche?.isFinal ? <Pill>Final</Pill> : null}
+              {received ? <Pill tone="ok">Received</Pill> : null}
+            </Stack>
+          </Box>
+          <Box sx={{ flex: 1, minWidth: { xs: '100%', md: 0 }, order: { xs: 5, md: 0 }, display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center' }}>
+            <Typography component="span" sx={{ fontSize: 12, color: 'text.secondary', mr: 0.25 }}>Released when</Typography>
+            {list.length ? (
+              list.map((c, i) => (
+                <CriterionChip key={c.id ?? i} c={c} verificationRoleOptions={verificationRoleOptions} responsibleRoleOptions={responsibleRoleOptions} />
+              ))
+            ) : (
+              <Typography component="span" sx={{ fontSize: 12, color: 'var(--warn)', fontWeight: 600 }}>no condition yet</Typography>
+            )}
+          </Box>
+          <Box sx={{ ml: { xs: 'auto', md: 0 } }}>{amountBlock}</Box>
+          <Stack direction="row" spacing={0.25} sx={{ flexShrink: 0 }}>
+            <Tooltip title="Edit tranche">
+              <IconButton size="small" aria-label={`Edit ${title}`} onClick={onToggleExpanded}>
+                <EditOutlinedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            {canRemove ? (
+              <Tooltip title="Delete tranche">
+                <IconButton size="small" aria-label={`Delete ${title}`} onClick={onRemove} sx={{ color: 'error.main' }}>
+                  <DeleteOutlineIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
             ) : null}
           </Stack>
-        </CardContent>
+        </Stack>
       </Card>
     );
   }
 
-  // EXPANDED EDITOR CARD
+  // ── Expanded: the editor.
+  const fieldSize = fx ? { xs: 12, sm: 6, md: 3 } : { xs: 12, sm: 4 };
   return (
     <Card
       variant="outlined"
-      sx={{
-        borderRadius: 2.5,
-        border: '1px solid #181818',
-        overflow: 'hidden',
-        mb: 2,
-      }}
+      component="section"
+      aria-label={`Editing ${title}`}
+      sx={{ mb: 1.25, borderRadius: 2, borderColor: 'text.primary', borderWidth: 1.5, boxShadow: 'var(--shadow)' }}
     >
-      {/* Editor Header */}
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1.5,
-          p: 2,
-          px: 2.5,
-          bgcolor: isDarkMode ? 'action.hover' : '#fbfbf9',
-          borderBottom: '1px solid',
-          borderColor: 'divider',
-        }}
-      >
-        <Box
-          sx={{
-            fontFamily: 'monospace',
-            fontWeight: 700,
-            bgcolor: '#181818',
-            color: '#fff',
-            px: 1.2,
-            py: 0.4,
-            borderRadius: 1.5,
-            fontSize: 12,
-          }}
-        >
-          {tag}
+      <Stack direction="row" alignItems="center" spacing={1.5} sx={{ px: 2, py: 1.5, borderBottom: '1px solid var(--line)' }}>
+        <Badge tag={tag} active />
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontWeight: 700, fontSize: 14 }}>Editing {title.toLowerCase()}</Typography>
+          <Typography sx={{ fontSize: 11.5, fontFamily: 'monospace', color: 'text.secondary' }}>{code || 'Gets its code on save'}</Typography>
         </Box>
-        <Typography variant="subtitle1" sx={{ fontWeight: 700, fontSize: 14 }}>
-          {title}
-        </Typography>
-        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Typography sx={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}>
-            {foreignLabel ? (
-              <Box component="span" sx={{ color: 'text.secondary', fontWeight: 500, mr: 1 }}>
-                {foreignLabel} ·
-              </Box>
-            ) : null}
-            {formatInrExact(Number(tranche?.amount) || 0)}
-          </Typography>
-          {!lumpSum && !received ? (
-            <Button
-              size="small"
-              color="error"
-              onClick={onRemove}
-              sx={{ fontWeight: 600, textTransform: 'none' }}
-            >
-              Remove
-            </Button>
-          ) : null}
-        </Box>
-      </Box>
+        {amountBlock}
+      </Stack>
 
-      {/* Editor Body */}
-      <CardContent sx={{ p: 2.5 }}>
-        <Typography
-          variant="caption"
-          sx={{ textTransform: 'uppercase', letterSpacing: '0.08em', color: 'text.secondary', fontWeight: 700, display: 'block', mb: 1.5 }}
-        >
-          Basic details
-        </Typography>
-
+      <Box sx={{ px: 2, pt: 2.25, pb: 2 }}>
         {received ? (
           <Alert severity="info" sx={{ mb: 2 }}>
             This tranche&apos;s receipt is recorded, so its amount is locked and it cannot be removed.
@@ -316,7 +250,7 @@ export function TrancheCard({
 
         <Grid container spacing={2} sx={{ alignItems: 'flex-start' }}>
           {fx ? (
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Grid size={fieldSize}>
               <RhfTextField
                 name={`${path}.fcAmount`}
                 control={control}
@@ -327,14 +261,12 @@ export function TrancheCard({
                 helperText={fx.rate ? `× ₹${fx.rate} per ${fx.currency}` : 'Set the FX rate above'}
                 slotProps={{
                   htmlInput: { min: 0, step: '0.01' },
-                  input: {
-                    startAdornment: <InputAdornment position="start">{CURRENCY_SYMBOL[fx.currency] || fx.currency}</InputAdornment>,
-                  },
+                  input: { startAdornment: <InputAdornment position="start">{CURRENCY_SYMBOL[fx.currency] || fx.currency}</InputAdornment> },
                 }}
               />
             </Grid>
           ) : null}
-          <Grid size={fx ? { xs: 12, sm: 6, md: 3 } : { xs: 12, sm: 4 }}>
+          <Grid size={fieldSize}>
             <RhfTextField
               name={`${path}.amount`}
               control={control}
@@ -342,7 +274,7 @@ export function TrancheCard({
               required
               type="number"
               disabled={received || lumpSum}
-              helperText={fx ? (derivedInr != null ? 'Calculated' : 'Calculated from the foreign amount') : undefined}
+              helperText={fx ? (derivedInr != null ? 'Calculated from the foreign amount' : 'Enter the foreign amount') : undefined}
               slotProps={{
                 htmlInput: { min: 0, step: '0.01', readOnly: derivedInr != null },
                 input: {
@@ -352,7 +284,7 @@ export function TrancheCard({
               }}
             />
           </Grid>
-          <Grid size={fx ? { xs: 12, sm: 6, md: 3 } : { xs: 12, sm: 4 }}>
+          <Grid size={fieldSize}>
             <RhfTextField
               name={`${path}.expectedReleaseDate`}
               control={control}
@@ -363,74 +295,29 @@ export function TrancheCard({
               slotProps={{ inputLabel: { shrink: true } }}
             />
           </Grid>
-          <Grid size={fx ? { xs: 12, sm: 6, md: 3 } : { xs: 12, sm: 4 }}>
-            <TextField
-              label="Frequency"
-              value={frequencyLabel || (lumpSum ? 'Not applicable' : '—')}
-              disabled
-              fullWidth
-              slotProps={{
-                inputLabel: { shrink: true },
-                input: {
-                  sx: {
-                    fontWeight: 600,
-                    '&.Mui-disabled': {
-                      bgcolor: isDarkMode ? 'action.hover' : '#f4f4f0',
-                    },
-                  },
-                },
-              }}
-              helperText="From schedule type."
+          <Grid size={fieldSize} sx={{ display: 'flex', alignItems: 'center', minHeight: 56 }}>
+            <Controller
+              name={`${path}.isFinal`}
+              control={control}
+              render={({ field }) => (
+                <FormControlLabel
+                  sx={{ ml: 0, '& .MuiFormControlLabel-label': { fontSize: 13.5, fontWeight: 600 } }}
+                  control={<Switch size="small" checked={Boolean(field.value)} onChange={(e) => field.onChange(e.target.checked)} />}
+                  label="Final tranche"
+                />
+              )}
             />
           </Grid>
         </Grid>
 
-        {/* Final Tranche Toggle Container */}
-        <Box
-          sx={{
-            mt: 2,
-            p: 1.5,
-            px: 2,
-            borderRadius: 2,
-            bgcolor: isDarkMode ? 'action.hover' : '#f4f4f0',
-            border: '1px solid',
-            borderColor: 'divider',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.5,
-          }}
-        >
-          <Controller
-            name={`${path}.isFinal`}
-            control={control}
-            render={({ field }) => (
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={Boolean(field.value)}
-                    onChange={(e) => field.onChange(e.target.checked)}
-                  />
-                }
-                label={
-                  <Typography variant="body2" sx={{ fontWeight: 600, fontSize: 13 }}>
-                    Mark as the final tranche
-                  </Typography>
-                }
-              />
-            )}
-          />
-        </Box>
-
-        {/* Release Criteria Section */}
-        <Box sx={{ mt: 3 }}>
-          <Typography
-            variant="caption"
-            sx={{ textTransform: 'uppercase', letterSpacing: '0.08em', color: 'text.secondary', fontWeight: 700, display: 'block', mb: 1.5 }}
-          >
-            Release criteria
-          </Typography>
-
-          <Stack spacing={2}>
+        <Box sx={{ mt: 2.5, pt: 2, borderTop: '1px dashed var(--line)' }}>
+          <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mb: 1.5 }}>
+            <Typography sx={SMALL_CAPS}>Release criteria</Typography>
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+              {criteria.fields.length > 1 ? 'all must be met before this tranche is released' : 'what must happen before this tranche is released'}
+            </Typography>
+          </Stack>
+          <Stack spacing={1.5}>
             {criteria.fields.map((field, i) => (
               <CriterionFields
                 key={field.id}
@@ -444,40 +331,38 @@ export function TrancheCard({
               />
             ))}
           </Stack>
-
           {!singleCriterion ? (
             <Button
               size="small"
               variant="outlined"
               startIcon={<AddIcon />}
               onClick={() => criteria.append(emptyCriterion())}
-              sx={{ mt: 2, borderStyle: 'dashed', textTransform: 'none', fontWeight: 600 }}
+              sx={{ mt: 1.5, borderStyle: 'dashed', fontWeight: 600 }}
             >
-              Add criteria
+              Add criterion
             </Button>
           ) : null}
         </Box>
+      </Box>
 
-        {/* Editor Footer Buttons */}
-        <Stack direction="row" spacing={1.5} sx={{ mt: 3, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-          <Button
-            type="button"
-            variant="contained"
-            onClick={onToggleExpanded}
-            sx={{ bgcolor: '#181818', color: '#fff', '&:hover': { bgcolor: '#000' }, fontWeight: 600 }}
-          >
-            Save tranche
+      <Stack
+        direction="row"
+        alignItems="center"
+        spacing={1.5}
+        sx={{ px: 2, py: 1.25, borderTop: '1px solid var(--line)', bgcolor: 'var(--card2)', flexWrap: 'wrap', rowGap: 1 }}
+      >
+        <Button type="button" variant="contained" size="small" startIcon={<CheckRoundedIcon />} onClick={onToggleExpanded}>
+          Done
+        </Button>
+        <Typography sx={{ fontSize: 12, color: 'text.secondary', flex: 1, minWidth: 180 }}>
+          Kept in the form — saved with the whole record.
+        </Typography>
+        {canRemove ? (
+          <Button type="button" size="small" color="error" startIcon={<DeleteOutlineIcon />} onClick={onRemove}>
+            Remove tranche
           </Button>
-          <Button
-            type="button"
-            variant="text"
-            onClick={onToggleExpanded}
-            sx={{ color: 'text.secondary', fontWeight: 500 }}
-          >
-            Cancel
-          </Button>
-        </Stack>
-      </CardContent>
+        ) : null}
+      </Stack>
     </Card>
   );
 }

@@ -3,12 +3,17 @@
  *
  * The backend's disbursementRules/trancheCriteria are one level deeper and
  * differently-named than the form's flat disbursementType/totalAmount/frequency
- * + tranches[] shape (see fundProfileSchema.js / FundProfileFormPage.jsx): a
+ * + tranches[] shape (see fundProfileSchema.js / FundProfileFields.jsx): a
  * profile has at most one meaningful disbursement rule, and each
  * DonorTrancheCriterion row carries its own amount/date plus a criteria[] list
  * (a tranche can have more than one release gate — mirrors tranches[].criteria[]
  * on the form and DonorReleaseCriteria on the backend).
+ *
+ * A lump sum is one tranche on the wire; its release criteria are edited in
+ * the form's `lumpSumCriteria[]` (required — no longer a fixed "On Signing").
  */
+
+import { emptyCriterion } from './disbursementMapper.js';
 
 const FUND_MODE_LABEL = { RESTRICTED: 'Restricted', UNRESTRICTED: 'Unrestricted' };
 
@@ -66,9 +71,13 @@ function toReleaseCriterionItem(c) {
 }
 
 /** One tranche row (amount/date + all its criteria) → a trancheCriteria item. */
-function toTrancheCriterionItem(t, frequency) {
+function toTrancheCriterionItem(t, frequency, foreign) {
   return {
+    // Sent back so the server keeps this tranche (same id and code) instead of
+    // replacing it — credit notes point at tranches by id.
+    id: t.id ?? null,
     amountCriteria: numOrNull(t.amount),
+    foreignAmount: foreign ? numOrNull(t.fcAmount) : null,
     expectedReleaseDate: trimOrNull(t.expectedReleaseDate),
     frequency: frequency || 'MONTHLY',
     isFinalTranche: Boolean(t.isFinal),
@@ -103,7 +112,10 @@ function toCriterionFormValue(c) {
 /** The inverse of toTrancheCriterionItem: a trancheCriteria item → a tranche row. */
 function toTrancheFormValue(c) {
   return {
+    id: c.id ?? null,
+    trancheCode: c.trancheCode || '',
     amount: c.amountCriteria ?? '',
+    fcAmount: c.foreignAmount ?? '',
     expectedReleaseDate: c.expectedReleaseDate || '',
     isFinal: Boolean(c.isFinalTranche),
     criteria: (c.criteria || []).map(toCriterionFormValue),
@@ -112,10 +124,7 @@ function toTrancheFormValue(c) {
 
 /** Form values → CreateFundProfileRequest. */
 export function toFundProfileRequest(values) {
-  const geographies =
-    (values.selectedGeographies || []).length === 0 || values.selectedGeographies.includes('ALL')
-      ? []
-      : values.selectedGeographies.map((stateId) => ({ stateId: Number(stateId) }));
+  const geographies = toGeographyItems(values);
 
   const utilisationRules = (values.utilisationRules || [])
     .filter((r) => (r.ruleType || '').trim())
@@ -127,24 +136,30 @@ export function toFundProfileRequest(values) {
     }));
 
   const disbursementActive = !isBlank(values.totalAmount) || (values.tranches || []).length > 0;
+  const fc = foreignContributionOf(values);
   const disbursementRules = disbursementActive
     ? [
         {
+          id: values.disbursementRuleId ?? null,
           totalAmount: numOrNull(values.totalAmount),
           disbursementType: values.disbursementType,
           receivingDate: values.disbursementType === 'LUMP_SUM' ? trimOrNull(values.receivingDate) : null,
+          ...fc,
           trancheCriteria:
             values.disbursementType === 'LUMP_SUM'
               ? [
                   {
+                    id: values.lumpSumTrancheId ?? null,
                     amountCriteria: numOrNull(values.totalAmount),
+                    // A lump sum is the whole commitment, so in FC it is the whole foreign amount.
+                    foreignAmount: fc.currency ? fc.foreignAmount : null,
                     expectedReleaseDate: trimOrNull(values.receivingDate),
                     frequency: 'MONTHLY',
                     isFinalTranche: true,
-                    criteria: [{ releaseCriteria: 'ON_SIGNING' }],
+                    criteria: (values.lumpSumCriteria || []).map(toReleaseCriterionItem),
                   },
                 ]
-              : (values.tranches || []).map((t) => toTrancheCriterionItem(t, values.frequency)),
+              : (values.tranches || []).map((t) => toTrancheCriterionItem(t, values.frequency, Boolean(fc.currency))),
         },
       ]
     : [];
@@ -163,6 +178,48 @@ export function toFundProfileRequest(values) {
     utilisationRules,
     disbursementRules,
   };
+}
+
+/**
+ * The FC block on the wire: all five fields, or all null for an INR commitment.
+ * Sent only when the currency, amount and rate are filled in, and never when the
+ * form says the donor isn't in the FC book (fcActive === false).
+ */
+function foreignContributionOf(values) {
+  const none = { currency: null, foreignAmount: null, fxRate: null, fxRateDate: null, fxRateSource: null };
+  if (values.fcActive === false) return none;
+  if (!values.fcCurrency || !(Number(values.fcAmount) > 0) || !(Number(values.fcRate) > 0)) return none;
+  return {
+    currency: values.fcCurrency,
+    foreignAmount: numOrNull(values.fcAmount),
+    fxRate: numOrNull(values.fcRate),
+    fxRateDate: trimOrNull(values.fcRateDate),
+    fxRateSource: FX_RATE_SOURCES.includes(values.fcRateSource) ? values.fcRateSource : 'MANUAL',
+  };
+}
+
+/** The sources the backend stores (FxRateSource). Anything else counts as MANUAL. */
+const FX_RATE_SOURCES = ['FBIL', 'ECB', 'MANUAL'];
+
+/**
+ * Geographies on the wire: one item per whole state ({ stateId }), or one per
+ * picked city ({ stateId, cityId }) for a state narrowed to cities. "All" or
+ * nothing selected → [] (spendable anywhere). Cities of unselected states are ignored.
+ */
+function toGeographyItems(values) {
+  const states = values.selectedGeographies || [];
+  if (states.length === 0 || states.includes('ALL')) return [];
+  const citiesByState = new Map();
+  for (const v of values.selectedCities || []) {
+    const [stateId, cityId] = String(v).split(':').map(Number);
+    if (!Number.isFinite(stateId) || !Number.isFinite(cityId)) continue;
+    citiesByState.set(stateId, [...(citiesByState.get(stateId) || []), cityId]);
+  }
+  return states.flatMap((s) => {
+    const stateId = Number(s);
+    const cities = citiesByState.get(stateId);
+    return cities?.length ? cities.map((cityId) => ({ stateId, cityId })) : [{ stateId }];
+  });
 }
 
 function isBlank(v) {
@@ -185,7 +242,9 @@ export function toFundProfileFormValues(dto) {
     movementAllowed: Boolean(dto.movementAllowed),
     explanationRequired: Boolean(dto.explanationRequired),
     onboardingComplete: Boolean(dto.onboardingComplete),
-    selectedGeographies: (dto.geographies || []).map((g) => g.stateId),
+    // One entry per state (a state listed by city has several rows), and its cities as "stateId:cityId".
+    selectedGeographies: [...new Set((dto.geographies || []).map((g) => g.stateId))],
+    selectedCities: (dto.geographies || []).filter((g) => g.cityId != null).map((g) => `${g.stateId}:${g.cityId}`),
     utilisationRules: (dto.utilisationRules || []).map((r) => ({
       ruleType: r.ruleType,
       otherRuleType: r.otherRuleType || '',
@@ -196,6 +255,24 @@ export function toFundProfileFormValues(dto) {
     totalAmount: rule?.totalAmount ?? '',
     frequency: trancheCriteria[0]?.frequency || 'QUARTERLY',
     receivingDate: lumpSum ? (rule?.receivingDate || trancheCriteria[0]?.expectedReleaseDate || '') : '',
+    lumpSumCriteria:
+      lumpSum && (trancheCriteria[0]?.criteria || []).length
+        ? trancheCriteria[0].criteria.map(toCriterionFormValue)
+        : [emptyCriterion()],
     tranches: lumpSum ? [] : trancheCriteria.map(toTrancheFormValue),
+    // Ids sent back on save so the rule and its tranches are updated, not replaced.
+    disbursementRuleId: rule?.id ?? null,
+    lumpSumTrancheId: lumpSum ? (trancheCriteria[0]?.id ?? null) : null,
+    lumpSumTrancheCode: lumpSum ? (trancheCriteria[0]?.trancheCode || '') : '',
+    // FC book: the saved currency / amount / rate, so editing doesn't re-derive them.
+    ...(rule?.foreign
+      ? {
+          fcCurrency: rule.currency,
+          fcAmount: rule.foreignAmount ?? '',
+          fcRate: rule.fxRate ?? '',
+          fcRateDate: rule.fxRateDate || '',
+          fcRateSource: rule.fxRateSource || 'MANUAL',
+        }
+      : {}),
   };
 }

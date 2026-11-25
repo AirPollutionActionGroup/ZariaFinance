@@ -35,8 +35,10 @@ describe('donorMapper', () => {
       phoneNumber: '',
       website: '',
       registrationNumber: '',
-      spocNameOfThePerson: 'Jane Doe',
-      spocEmail: 'jane@gates.org',
+      contacts: [
+        { id: null, name: ' Jane Doe ', email: 'jane@gates.org', phone: '', isPrimary: false },
+        { id: 7, name: 'Raj', email: 'raj@gates.org', phone: ' 98200 ', isPrimary: true },
+      ],
       address: '',
       cityId: '',
       stateId: '4',
@@ -50,6 +52,10 @@ describe('donorMapper', () => {
     expect(request.stateId).toBe(4);
     expect(request.countryId).toBe(9);
     expect(request.fundSourceDomicile).toBe('FOREIGN');
+    expect(request.contacts).toEqual([
+      { id: null, name: 'Jane Doe', email: 'jane@gates.org', phone: null, isPrimary: false },
+      { id: 7, name: 'Raj', email: 'raj@gates.org', phone: '98200', isPrimary: true },
+    ]);
   });
 
   it('omits donorCode from UpdateDonorRequest', () => {
@@ -59,8 +65,7 @@ describe('donorMapper', () => {
       donorType: 3,
       fundSourceDomicile: 'FOREIGN',
       email: 'grants@gates.org',
-      spocNameOfThePerson: 'Jane Doe',
-      spocEmail: 'jane@gates.org',
+      contacts: [{ id: 3, name: 'Jane Doe', email: 'jane@gates.org', phone: '', isPrimary: true }],
     });
     expect(request).not.toHaveProperty('donorCode');
     expect(request.donorName).toBe('Gates Foundation');
@@ -79,5 +84,7 @@ describe('donorMapper', () => {
     expect(formValues.cityId).toBe(10);
     expect(formValues.stateId).toBe(5);
     expect(formValues.countryId).toBe(2);
+    // No contacts yet → one blank primary row to fill in.
+    expect(formValues.contacts).toEqual([{ id: null, name: '', email: '', phone: '', isPrimary: true }]);
   });
 });

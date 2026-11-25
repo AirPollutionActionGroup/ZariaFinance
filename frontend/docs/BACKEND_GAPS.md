@@ -46,10 +46,11 @@ validated numeric IDs with a labelled gap note.
 
 **Needed:** `GET /api/v1/programmes`, `GET /api/v1/states`, `GET /api/v1/cities?stateId=`.
 
-## #5 — Grant update is a stub
+## #5 — Grant update is a stub (resolved)
 
-`PUT /api/v1/grants/{id}` returns 204 without persisting. Grant editing is
-deliberately absent from the UI until this is implemented.
+Resolved: agreements are created and edited with their terms through
+`POST` / `PUT /api/v1/funding/{id}`, which persist both in one transaction.
+The old `/api/v1/grants` endpoints were removed.
 
 ## #6 — No binary document upload
 
@@ -70,11 +71,12 @@ not rendered in the app (no fake data); each becomes a module registered in
 All list endpoints return full collections. Acceptable at current volumes;
 the repository layer isolates the change when `Pageable` params arrive.
 
-## #9 — Donor contacts API missing
+## #9 — Donor contacts API — resolved
 
-`CreateDonorContactRequest` and `DonorContactResponse` DTOs exist and
-contacts are embedded in `DonorResponse`, but there is no endpoint to add or
-edit contacts. The UI renders contacts read-only via the donor detail payload.
+Donor create / update take a `contacts` list (name, email, phone, one
+primary; 1–10 per donor), returned in `DonorResponse.contacts` primary first.
+Stored in `donor_contact` (V140); the single SPOC columns on `donor_master`
+were migrated into it and dropped. The donor form edits the list.
 
 ## #10 — Donor register schema extension (requested by business)
 

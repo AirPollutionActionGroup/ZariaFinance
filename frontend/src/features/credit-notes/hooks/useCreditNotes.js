@@ -36,3 +36,19 @@ export function useCreateCreditNote() {
     onSuccess: invalidate,
   });
 }
+
+/** Check (dryRun) or import credit notes from CSV rows; a real import refreshes notes, inflow and funding. */
+export function useImportCreditNotes() {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateNotesAndOutflow();
+  return useMutation({
+    mutationFn: (payload) => creditNoteApi.importRows(payload),
+    onSuccess: (data) => {
+      if (data?.dryRun) return;
+      invalidate();
+      // Imported money counts as received on tranches and funding records too.
+      queryClient.invalidateQueries({ queryKey: queryKeys.inflowBudgetLines.all() });
+      queryClient.invalidateQueries({ queryKey: queryKeys.funding.all() });
+    },
+  });
+}

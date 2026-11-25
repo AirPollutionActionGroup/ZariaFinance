@@ -4,6 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import AddIcon from '@mui/icons-material/Add';
 import TableRowsOutlinedIcon from '@mui/icons-material/TableRowsOutlined';
 import PeopleOutlineIcon from '@mui/icons-material/PeopleOutline';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import { downloadCsv } from '../../../lib/export/csv.js';
+import { allocationsCsv } from '../utils/allocationExport.js';
 import { EmptyState, ErrorState, LoadingState, PageHeader, SearchField, StatStrip } from '../../../shared/components/index.js';
 import { useEmployeeAllocations } from '../hooks/useEmployeeAllocations.js';
 import { isActiveAllocation } from '../services/employeeAllocationService.js';
@@ -111,12 +114,23 @@ export function EmployeeAllocationPage() {
             />
           );
         })}
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<FileDownloadOutlinedIcon />}
+          onClick={() => downloadCsv(`employee-allocations-${new Date().toLocaleDateString('en-CA')}.csv`, allocationsCsv(rows, allocations))}
+          disabled={!rows.length}
+          title={`Download the ${rows.length} allocation${rows.length === 1 ? '' : 's'} shown as a CSV file`}
+          sx={{ ml: 'auto', whiteSpace: 'nowrap' }}
+        >
+          Export {rows.length}
+        </Button>
         <ToggleButtonGroup
           size="small"
           exclusive
           value={view}
           onChange={(_e, next) => next && setView(next)}
-          sx={{ ml: 'auto', '& .MuiToggleButton-root': { px: 1.5, py: 0.5, textTransform: 'none', gap: 0.75 } }}
+          sx={{ '& .MuiToggleButton-root': { px: 1.5, py: 0.5, textTransform: 'none', gap: 0.75 } }}
         >
           <ToggleButton value="table" aria-label="Table view">
             <TableRowsOutlinedIcon fontSize="small" /> Table

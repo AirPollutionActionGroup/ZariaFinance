@@ -1,5 +1,7 @@
 package com.ngo.finance.transaction.service;
 
+import com.ngo.finance.masters.overbudgetreason.entity.OverBudgetReason;
+import com.ngo.finance.masters.overbudgetreason.service.OverBudgetReasonService;
 import com.ngo.finance.common.exception.ResourceNotFoundException;
 import com.ngo.finance.common.exception.ValidationException;
 import com.ngo.finance.outflow.dto.RefDto;
@@ -40,6 +42,8 @@ public class DebitNoteService {
 
     private final NoteMapper noteMapper;
 
+    private final OverBudgetReasonService overBudgetReasonService;
+
     @Transactional(readOnly = true)
     public List<NoteResponse> listDebitNotes() {
         return debitNoteRepository.findAllByOrderByNoteDateDescIdDesc().stream().map(noteMapper::toResponse).toList();
@@ -57,15 +61,22 @@ public class DebitNoteService {
         BigDecimal remainingAfter = row.expectedAmount()
                 .subtract(outflowScheduleService.spentOn(row))
                 .subtract(request.getAmount());
-        String reason = NoteRules.trimToNull(request.getReason());
-        if (remainingAfter.signum() < 0 && reason == null) {
-            throw new ValidationException("This note takes " + row.id() + " over budget — give an over-budget reason");
+        OverBudgetReason reason = null;
+        if (remainingAfter.signum() < 0) {
+            if (request.getOverBudgetReasonId() == null) {
+                String message = "This note takes " + row.id() + " over budget — give an over-budget reason";
+                throw new ValidationException(message, new java.util.HashMap<>(java.util.Map.of("overBudgetReasonId", message)));
+            }
+            reason = overBudgetReasonService.requireActive(request.getOverBudgetReasonId());
         }
         NoteRules.requirePicked(request.getPayee(), "Select the payee");
         NoteRules.requirePicked(request.getPaymentMode(), "Select a payment mode");
         NoteRules.requirePicked(request.getGroup(), "Select a payment group");
         NoteRules.requireDonorForFund(request.getDonor(), request.getFundProfile());
         requireFundBalance(request);
+        String tallyType = NoteRules.trimToNull(request.getTallyVoucherType());
+        String tallyNo = NoteRules.trimToNull(request.getTallyVoucherNo());
+        validateTallyVoucher(tallyType, tallyNo);
 
         String actor = NoteRules.actor(request.getActor());
         DebitNote note = DebitNote.builder()
@@ -74,7 +85,7 @@ public class DebitNoteService {
                 .quarter((short) row.quarter())
                 .noteDate(request.getDate())
                 .amount(request.getAmount())
-                .reason(remainingAfter.signum() < 0 ? reason : null)
+                .overBudgetReason(reason)
                 .book(request.getBook())
                 .payeeCategory(request.getPayeeCategory().trim())
                 .payeeRef(RefDto.idOf(request.getPayee()))
@@ -94,6 +105,8 @@ public class DebitNoteService {
                 .grantRef(RefDto.idOf(request.getGrant()))
                 .grantName(RefDto.nameOf(request.getGrant()))
                 .reference(NoteRules.trimToNull(request.getReference()))
+                .tallyVoucherType(tallyType)
+                .tallyVoucherNo(tallyNo)
                 .remarks(NoteRules.trimToNull(request.getRemarks()))
                 .attachmentName(NoteRules.trimToNull(request.getAttachmentName()))
                 .build();
@@ -103,6 +116,22 @@ public class DebitNoteService {
         DebitNote saved = debitNoteRepository.save(note);
         log.info("Debit note {} issued on {} for {}", saved.getNoteCode(), row.id(), saved.getAmount());
         return noteMapper.toResponse(saved);
+    }
+
+    /** A Tally voucher type needs its number, and one Tally voucher goes on one debit note. */
+    private void validateTallyVoucher(String type, String no) {
+        if (no == null) {
+            if (type != null) {
+                throw new ValidationException("Validation failed for one or more fields",
+                        java.util.Map.of("tallyVoucherNo", "Enter the Tally voucher number"));
+            }
+            return;
+        }
+        debitNoteRepository.findByTallyVoucher(type == null ? "" : type, no).ifPresent(existing -> {
+            throw new ValidationException("Validation failed for one or more fields",
+                    java.util.Map.of("tallyVoucherNo", "Tally voucher " + CreditNoteService.tallyLabel(type, no)
+                            + " is already on " + existing.getNoteCode()));
+        });
     }
 
     /** A debit charged to a fund may not exceed what the fund has available. */

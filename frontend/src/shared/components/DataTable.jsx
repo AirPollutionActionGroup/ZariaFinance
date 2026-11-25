@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  Box,
   Card,
   Stack,
   Table,
@@ -33,6 +34,7 @@ function compareValues(a, b) {
  * rows and a smaller title for tables embedded in a detail page.
  * Handles the four canonical states (loading / error / empty / data) so
  * every list page behaves identically.
+ * `flat` drops the card (border, radius, shadow) for a table set inside another panel.
  */
 export function DataTable({
   columns = [],
@@ -49,6 +51,7 @@ export function DataTable({
   onRowClick,
   defaultSort = null,
   footer = null,
+  flat = false,
 }) {
   const [sort, setSort] = useState(defaultSort);
 
@@ -65,8 +68,9 @@ export function DataTable({
   if (isLoading) return <LoadingState label="Loading records…" />;
   if (error) return <ErrorState error={error} onRetry={onRetry} />;
 
+  const Frame = flat ? Box : Card;
   return (
-    <Card>
+    <Frame sx={flat ? { borderTop: '1px solid var(--line)' } : undefined}>
       {title || actions ? (
         <Stack
           direction="row"
@@ -137,6 +141,6 @@ export function DataTable({
           </Table>
         </TableContainer>
       )}
-    </Card>
+    </Frame>
   );
 }

@@ -1,17 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { fundingFormDefaults, fundingSchema } from './fundingSchema.js';
+import { emptyCriterion } from '../../donor-management/mappers/disbursementMapper.js';
 
 const valid = {
   ...fundingFormDefaults,
   donorId: '4',
+  // Restricted (the default) is programme-tied, so it needs a programme.
   fundClass: 'CLASS_A_RESTRICTED',
+  programmeId: '7',
   totalAmount: '100000',
   receivingDate: '2026-12-01',
+  lumpSumCriteria: [{ ...emptyCriterion(), criterionType: 'ON_SIGNING' }],
   agreement: {
     ...fundingFormDefaults.agreement,
     agreementDate: '2026-11-01',
     startDate: '2026-12-01',
     endDate: '2027-11-30',
+    agreementDocumentPath: 'signed-agreement.pdf',
   },
 };
 
@@ -21,6 +26,11 @@ const paths = (values) => {
 };
 
 describe('fundingSchema', () => {
+  it('requires a complete release criterion for a lump sum', () => {
+    expect(paths({ ...valid, lumpSumCriteria: [] })).toEqual(['lumpSumCriteria']);
+    expect(paths({ ...valid, lumpSumCriteria: [emptyCriterion()] })).toEqual(['lumpSumCriteria.0.criterionType']);
+  });
+
   it('accepts complete terms + agreement', () => {
     expect(paths(valid)).toEqual([]);
   });
@@ -33,7 +43,9 @@ describe('fundingSchema', () => {
 
   it('validates the agreement only when it is being recorded now', () => {
     const blank = { ...valid, agreement: fundingFormDefaults.agreement };
-    expect(paths(blank)).toEqual(expect.arrayContaining(['agreement.agreementDate', 'agreement.startDate']));
+    expect(paths(blank)).toEqual(
+      expect.arrayContaining(['agreement.agreementDate', 'agreement.startDate', 'agreement.agreementDocumentPath']),
+    );
     expect(paths({ ...blank, withAgreement: false })).toEqual([]);
   });
 

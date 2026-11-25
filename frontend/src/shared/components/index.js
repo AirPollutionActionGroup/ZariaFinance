@@ -1,4 +1,6 @@
 export { PageHeader } from './PageHeader.jsx';
+export { Breadcrumbs, RecordHeader } from './RecordHeader.jsx';
+export { FieldSection, Panel } from './DetailPanel.jsx';
 export { StatCard } from './StatCard.jsx';
 export { StatStrip } from './StatStrip.jsx';
 export { StatusChip } from './StatusChip.jsx';

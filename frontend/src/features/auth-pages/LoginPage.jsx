@@ -69,16 +69,16 @@ export function LoginPage() {
   const checkCapsLock = (event) => setCapsLock(Boolean(event.getModifierState?.('CapsLock')));
 
   return (
-    <AuthLayout maxWidth={400}>
-      <Typography variant="h4" component="h1" sx={{ mb: 0.5 }}>
+    <AuthLayout maxWidth={380} compact>
+      <Typography component="h1" sx={{ fontSize: 22, fontWeight: 700, lineHeight: 1.25, mb: 0.25 }}>
         Sign in
       </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2.25 }}>
         Welcome back. Use your A-PAG · TCF account.
       </Typography>
 
       <Box component="form" onSubmit={handleSubmit} noValidate>
-        <Stack spacing={1.5}>
+        <Stack spacing={1.75}>
           {error && !hasFieldErrors ? (
             <Alert severity="error" role="alert">
               {error.message || 'Sign-in failed. Check your username and password and try again.'}
@@ -95,8 +95,9 @@ export function LoginPage() {
             autoFocus
             fullWidth
             required
+            size="small"
             error={Boolean(usernameError)}
-            helperText={usernameError || ' '}
+            helperText={usernameError || undefined}
           />
           <TextField
             label="Password"
@@ -112,8 +113,9 @@ export function LoginPage() {
             autoComplete="current-password"
             fullWidth
             required
+            size="small"
             error={Boolean(passwordError)}
-            helperText={passwordError || (capsLock ? 'Caps Lock is on' : ' ')}
+            helperText={passwordError || (capsLock ? 'Caps Lock is on' : undefined)}
             slotProps={{
               formHelperText: { sx: { color: !passwordError && capsLock ? 'warning.main' : undefined } },
               input: {
@@ -138,22 +140,21 @@ export function LoginPage() {
               },
             }}
           />
-          <Button type="submit" variant="contained" size="large" disabled={busy} sx={{ py: 1.25 }}>
+          <Button type="submit" variant="contained" disabled={busy} sx={{ py: 1 }}>
             {busy ? 'Signing in…' : 'Sign in'}
           </Button>
         </Stack>
       </Box>
 
-      <Divider sx={{ my: 3, typography: 'caption', color: 'text.secondary' }}>or</Divider>
+      <Divider sx={{ my: 1.75, typography: 'caption', color: 'text.secondary' }}>or</Divider>
 
-      <Button variant="outlined" color="inherit" fullWidth onClick={handleReviewMode}>
-        Continue in review mode
-      </Button>
-      <Typography variant="caption" color="text.secondary" align="center" component="p" sx={{ mt: 0.75 }}>
-        Look around the app without signing in.
-      </Typography>
+      <Tooltip title="Look around the app without signing in" describeChild>
+        <Button variant="outlined" color="inherit" fullWidth onClick={handleReviewMode} sx={{ borderColor: 'var(--line)' }}>
+          Continue in review mode
+        </Button>
+      </Tooltip>
 
-      <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 3 }}>
+      <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 2, fontSize: 13 }}>
         New here?{' '}
         <Link component={RouterLink} to="/register-extended" sx={{ fontWeight: 600 }}>
           Request an account

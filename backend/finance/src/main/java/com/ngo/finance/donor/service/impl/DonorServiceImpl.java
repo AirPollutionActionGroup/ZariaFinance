@@ -11,13 +11,25 @@ import com.ngo.finance.donor.entity.CountryMaster;
 import com.ngo.finance.donor.entity.DonorMaster;
 import com.ngo.finance.donor.mapper.DonorMapper;
 import com.ngo.finance.donor.repository.CityRepository;
+import com.ngo.finance.donor.repository.DonorContactRepository;
 import com.ngo.finance.donor.repository.DonorRepository;
 import com.ngo.finance.donor.repository.StateRepository;
 import com.ngo.finance.donor.service.DonorService;
 import com.ngo.finance.masters.documenttype.service.DocumentTypeService;
 import com.ngo.finance.masters.donortype.entity.DonorTypeMaster;
 import com.ngo.finance.masters.donortype.repository.DonorTypeMasterRepository;
+import com.ngo.finance.donor.dto.request.DonorContactItem;
+import com.ngo.finance.donor.entity.DonorContact;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -34,6 +46,9 @@ public class DonorServiceImpl implements DonorService {
 
     @Autowired
     private DonorRepository donorRepository;
+
+    @Autowired
+    private DonorContactRepository donorContactRepository;
 
     @Autowired
     private CountryRepository countryRepository;
@@ -89,8 +104,10 @@ public class DonorServiceImpl implements DonorService {
 
         DonorMaster donor = donorMapper.toEntity(request);
         donor.setDonorType(donorType);
-        donor.setDocumentType(documentTypeService.requireUsableCode(
-                request.getDocumentType(), null, request.getFundSourceDomicile()));
+        donor.setDocumentTypeId(documentTypeService.requireUsable(
+                request.getDocumentTypeId(), null, request.getFundSourceDomicile()));
+        documentTypeService.requireForDonorType(donorType != null ? donorType.getId() : null,
+                donorType != null ? donorType.getName() : null, donor.getDocumentTypeId(), request.getFundSourceDomicile());
 
         if (request.getCountryId() != null) {
             donor.setCountry(countryRepository.findById(request.getCountryId())
@@ -107,7 +124,10 @@ public class DonorServiceImpl implements DonorService {
                     .orElseThrow(() -> new ResourceNotFoundException("City", request.getCityId())));
         }
 
-        donor.setIsActive(false);
+        // A donor created on the form starts Active (the request defaults to it); the CSV
+        // import asks for Inactive explicitly, so imported donors are reviewed first.
+        donor.setIsActive(!Boolean.FALSE.equals(request.getIsActive()));
+        applyContacts(donor, request.getContacts());
 
         DonorMaster savedDonor = donorRepository.save(donor);
         log.info("Donor created successfully with id: {}", savedDonor.getId());
@@ -176,6 +196,10 @@ public class DonorServiceImpl implements DonorService {
         DonorMaster donor = donorRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Donor", id));
 
+        // For the required-document check below: only re-checked when the donor type or the document changes.
+        Long donorTypeBefore = donor.getDonorType() != null ? donor.getDonorType().getId() : null;
+        Long documentBefore = donor.getDocumentTypeId();
+
         if (request.getDonorTypeId() != null) {
             FundSourceDomicile effectiveDomicile = request.getFundSourceDomicile() != null
                     ? request.getFundSourceDomicile()
@@ -213,21 +237,18 @@ public class DonorServiceImpl implements DonorService {
                 .foreignFundSourceType(request.getForeignFundSourceType())
                 .foreignCountryId(request.getForeignCountryId())
                 .passportId(request.getPassportId())
-                .documentType(request.getDocumentType() == null
+                .documentTypeId(request.getDocumentTypeId() == null
                         ? null
-                        : documentTypeService.requireUsableCode(
-                                request.getDocumentType(),
+                        : documentTypeService.requireUsable(
+                                request.getDocumentTypeId(),
                                 // Keeping the saved type is fine, unless the domicile changes —
                                 // then the type must fit the new domicile like a fresh choice.
-                                domicileChanged ? null : donor.getDocumentType(),
+                                domicileChanged ? null : donor.getDocumentTypeId(),
                                 effectiveDomicileForDocument))
                 .documentNumber(request.getDocumentNumber())
                 .email(request.getEmail())
                 .phoneNumber(request.getPhoneNumber())
                 .website(request.getWebsite())
-                .spocNameOfThePerson(request.getSpocNameOfThePerson())
-                .spocPhoneNumber(request.getSpocPhoneNumber())
-                .spocEmail(request.getSpocEmail())
                 .address(request.getAddress())
                 .address2(request.getAddress2())
                 .cityId(request.getCityId())
@@ -237,11 +258,99 @@ public class DonorServiceImpl implements DonorService {
                 .registrationNumber(request.getRegistrationNumber())
                 .isActive(request.getIsActive())
                 .build(), donor);
+        if (request.getContacts() != null) {
+            applyContacts(donor, request.getContacts());
+        }
+
+        Long donorTypeAfter = donor.getDonorType() != null ? donor.getDonorType().getId() : null;
+        if (!java.util.Objects.equals(donorTypeBefore, donorTypeAfter)
+                || !java.util.Objects.equals(documentBefore, donor.getDocumentTypeId())) {
+            documentTypeService.requireForDonorType(donorTypeAfter,
+                    donor.getDonorType() != null ? donor.getDonorType().getName() : null,
+                    donor.getDocumentTypeId(), donor.getFundSourceDomicile());
+        }
 
         DonorMaster updated = donorRepository.save(donor);
         log.info("Donor updated successfully");
 
         return donorMapper.toResponse(updated);
+    }
+
+    /**
+     * Sets the donor's points of contact to {@code items}: an item with an id
+     * updates that contact, one without adds a new contact, and contacts left
+     * out are removed. Exactly one is primary (the first, if none is marked);
+     * an email appears once per donor. Errors name the item, e.g.
+     * {@code contacts.1.email}, so the form can show them on the right field.
+     */
+    private void applyContacts(DonorMaster donor, List<DonorContactItem> items) {
+        Map<String, String> errors = new LinkedHashMap<>();
+        if (items == null || items.isEmpty()) {
+            throw new ValidationException("Add at least one point of contact", Map.of("contacts", "Add at least one point of contact"));
+        }
+        long primaries = items.stream().filter(i -> Boolean.TRUE.equals(i.getIsPrimary())).count();
+        if (primaries > 1) {
+            errors.put("contacts", "Only one point of contact can be primary");
+        }
+        Map<String, Integer> seenEmails = new HashMap<>();
+        for (int i = 0; i < items.size(); i++) {
+            String email = items.get(i).getEmail() == null ? "" : items.get(i).getEmail().trim().toLowerCase(Locale.ROOT);
+            Integer earlier = seenEmails.putIfAbsent(email, i);
+            if (earlier != null && !email.isEmpty()) {
+                errors.put("contacts." + i + ".email", "This email is already on contact " + (earlier + 1));
+            }
+        }
+        Map<Long, DonorContact> existing = new HashMap<>();
+        donor.getContacts().forEach(c -> existing.put(c.getId(), c));
+        for (int i = 0; i < items.size(); i++) {
+            Long id = items.get(i).getId();
+            if (id != null && !existing.containsKey(id)) {
+                errors.put("contacts." + i, "This contact doesn't belong to the donor");
+            }
+        }
+        if (!errors.isEmpty()) {
+            throw new ValidationException("Validation failed for one or more fields", errors);
+        }
+
+        int primaryIndex = 0;
+        for (int i = 0; i < items.size(); i++) {
+            if (Boolean.TRUE.equals(items.get(i).getIsPrimary())) {
+                primaryIndex = i;
+            }
+        }
+
+        // Step 1 (existing donor): drop removed contacts and park the kept ones
+        // (not primary, a placeholder email), then flush. Inserts are flushed
+        // before deletes, so without this a new primary, or an email moved
+        // from a removed / another contact, would hit the unique indexes.
+        Set<DonorContact> kept = Collections.newSetFromMap(new IdentityHashMap<>());
+        items.stream().map(DonorContactItem::getId).filter(Objects::nonNull).map(existing::get).forEach(kept::add);
+        if (!existing.isEmpty()) {
+            // Deleted explicitly (not left to orphan removal), so the delete is
+            // in this flush even if the contacts were added earlier in the same transaction.
+            List<DonorContact> removed = donor.getContacts().stream().filter(c -> !kept.contains(c)).toList();
+            donor.getContacts().removeAll(removed);
+            donorContactRepository.deleteAll(removed);
+            for (DonorContact c : kept) {
+                c.setIsPrimary(false);
+                c.setEmail("~" + c.getId() + "@pending.invalid");
+            }
+            donorRepository.saveAndFlush(donor);
+        }
+
+        // Step 2: the final values, in the order given.
+        for (int i = 0; i < items.size(); i++) {
+            DonorContactItem item = items.get(i);
+            DonorContact contact = item.getId() != null ? existing.get(item.getId()) : DonorContact.builder().donor(donor).build();
+            contact.setName(item.getName().trim());
+            contact.setEmail(item.getEmail().trim());
+            contact.setPhone(item.getPhone() == null || item.getPhone().isBlank() ? null : item.getPhone().trim());
+            contact.setIsPrimary(i == primaryIndex);
+            contact.setSortOrder(i);
+            if (item.getId() == null) {
+                donor.getContacts().add(contact);
+            }
+        }
     }
 
     @Override

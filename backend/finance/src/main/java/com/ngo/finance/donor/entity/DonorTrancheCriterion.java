@@ -33,6 +33,14 @@ public class DonorTrancheCriterion extends AuditEntity {
     @Column(name = "amount_criteria", nullable = false, precision = 19, scale = 2)
     private BigDecimal amountCriteria;
 
+    /** Permanent code, {profileCode}-T{n} (e.g. FP-2026-001-T2) — set once, never changed or reused. */
+    @Column(name = "tranche_code", length = 40, nullable = false, unique = true, updatable = false)
+    private String trancheCode;
+
+    /** FC book only: this tranche in the commitment's foreign currency. amountCriteria stays INR. */
+    @Column(name = "foreign_amount", precision = 19, scale = 2)
+    private BigDecimal foreignAmount;
+
     @Column(name = "expected_release_date")
     private LocalDate expectedReleaseDate;
 

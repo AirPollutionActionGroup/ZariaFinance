@@ -3,6 +3,9 @@ import { Box, Button, Chip, IconButton, MenuItem, Select, Stack, Tooltip, Typogr
 import AddIcon from '@mui/icons-material/Add';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import { downloadCsv } from '../../../lib/export/csv.js';
+import { programmeRows, programmesCsv } from '../lib/programmeExport.js';
 import { useNavigate } from 'react-router-dom';
 import { ACTIONS, PermissionGate } from '../../../core/permissions/index.js';
 import { DataTable, PageHeader, SearchField, StatStrip, StatusChip } from '../../../shared/components/index.js';
@@ -262,6 +265,14 @@ export function ProgrammesListPage() {
 
   const typeCount = { all: allProgrammes.length, programme: programmeCount, project: projectCount };
 
+  // Export follows the search / type / status filters (not what's collapsed on screen).
+  const exportRows = useMemo(
+    () => programmeRows(allProgrammes, { search, type: typeFilter, status: statusFilter }),
+    [allProgrammes, search, typeFilter, statusFilter],
+  );
+  const handleExport = () =>
+    downloadCsv(`programmes-${new Date().toLocaleDateString('en-CA')}.csv`, programmesCsv(exportRows));
+
   return (
     <>
       <PageHeader
@@ -319,6 +330,17 @@ export function ProgrammesListPage() {
             </MenuItem>
           ))}
         </Select>
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<FileDownloadOutlinedIcon />}
+          onClick={handleExport}
+          disabled={!exportRows.length}
+          title={`Download the ${exportRows.length} record${exportRows.length === 1 ? '' : 's'} matching these filters as a CSV file`}
+          sx={{ whiteSpace: 'nowrap' }}
+        >
+          Export {exportRows.length}
+        </Button>
       </Stack>
 
       <DataTable
@@ -331,7 +353,7 @@ export function ProgrammesListPage() {
         onRetry={programmesQuery.refetch}
         emptyTitle={allProgrammes.length === 0 ? 'No programmes' : 'No records match your search or filters'}
         emptyDescription={
-          allProgrammes.length === 0 ? 'Create a programme to start tying donations and grants to it.' : 'Try another filter.'
+          allProgrammes.length === 0 ? 'Create a programme to start tying funding to it.' : 'Try another filter.'
         }
         onRowClick={(row) => navigate(`/programmes/${row.record.id}`)}
       />

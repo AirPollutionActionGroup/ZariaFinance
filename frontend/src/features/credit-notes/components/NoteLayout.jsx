@@ -1,4 +1,4 @@
-import { Box, Card, CardContent, Grid, Stack, Typography } from '@mui/material';
+import { Box, Button, Card, CardContent, Grid, Stack, Typography } from '@mui/material';
 
 export const MONEY_SX = { fontVariantNumeric: 'tabular-nums' };
 
@@ -147,5 +147,73 @@ export function SectionCard({ title, action = null, children }) {
         {children}
       </CardContent>
     </Card>
+  );
+}
+
+export const pct = (part, whole) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
+export const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+const FIGURE_CAPS_SX = { textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: 10.5, fontWeight: 600, color: 'text.secondary' };
+
+/** One figure in a list page's figure strip: a label, the amount, and a line of context. */
+export function FigureTile({ label, value, sub, color, children }) {
+  return (
+    <Box sx={{ p: 2.25, minWidth: 0 }}>
+      <Typography sx={FIGURE_CAPS_SX}>{label}</Typography>
+      <Typography sx={{ ...MONEY_SX, fontSize: 24, fontWeight: 700, lineHeight: 1.3, mt: 0.25, color }}>{value}</Typography>
+      {sub ? (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ...MONEY_SX }}>
+          {sub}
+        </Typography>
+      ) : null}
+      {children}
+    </Box>
+  );
+}
+
+/**
+ * The figure strip above a notes list: the period and note count, Clear filters
+ * when any are on, and four FigureTiles. Its figures follow the filters.
+ */
+export function FigureStrip({ period, count, filtered, onClearFilters, children }) {
+  return (
+    <Card variant="outlined" sx={{ mb: 2, borderRadius: 3, overflow: 'hidden' }}>
+      <Stack
+        direction="row"
+        spacing={1}
+        sx={{ px: 2.25, py: 1, alignItems: 'center', bgcolor: 'var(--card2)', borderBottom: '1px solid', borderColor: 'divider' }}
+      >
+        <Typography variant="body2" sx={{ fontWeight: 600, flex: 1 }}>
+          {period}
+          <Box component="span" sx={{ color: 'text.secondary', fontWeight: 400 }}>
+            {' '}· {plural(count, 'note')}
+          </Box>
+        </Typography>
+        {filtered ? (
+          <Button size="small" color="inherit" onClick={onClearFilters} sx={{ color: 'text.secondary' }}>
+            Clear filters
+          </Button>
+        ) : null}
+      </Stack>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' },
+          '& > *:not(:last-child)': { borderRight: { md: '1px solid' }, borderColor: { md: 'divider' } },
+        }}
+      >
+        {children}
+      </Box>
+    </Card>
+  );
+}
+
+/** LC / FC split as a thin bar (LC green, FC dark). */
+export function BookSplitBar({ lc, fc }) {
+  const lcShare = lc + fc > 0 ? (lc / (lc + fc)) * 100 : 0;
+  return (
+    <Box sx={{ mt: 1, height: 6, borderRadius: 3, bgcolor: fc ? 'var(--ink, #222)' : 'var(--line2)', overflow: 'hidden' }}>
+      <Box sx={{ height: '100%', width: `${lcShare}%`, bgcolor: 'success.main' }} />
+    </Box>
   );
 }

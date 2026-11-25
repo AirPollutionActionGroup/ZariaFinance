@@ -18,13 +18,13 @@ export function useActiveDocumentTypes() {
 }
 
 /**
- * code → display name (e.g. PAN_CARD → "PAN Card"), from all document types so
- * a donor holding a since-deactivated type still shows its name. Falls back to
- * the code itself until the list loads.
+ * document type id → its name (e.g. 3 → "PAN Card"), from all document types so
+ * a donor holding a since-deactivated type still shows its name. Empty until
+ * the list loads.
  */
 export function useDocumentTypeName() {
   const { data } = useDocumentTypes();
-  return (code) => (code ? data?.find((t) => t.code === code)?.name || code : '');
+  return (id) => (id ? data?.find((t) => String(t.id) === String(id))?.name || '' : '');
 }
 
 function useInvalidating(mutationFn) {

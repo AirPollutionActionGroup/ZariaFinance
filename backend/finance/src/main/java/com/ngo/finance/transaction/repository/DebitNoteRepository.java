@@ -19,6 +19,16 @@ public interface DebitNoteRepository extends JpaRepository<DebitNote, Long> {
     @EntityGraph(attributePaths = {"budgetLine", "budgetLine.budget"})
     Optional<DebitNote> findByNoteCode(String noteCode);
 
+    /** The note already booked as this Tally voucher (case-insensitive; a blank type matches no type). */
+    @Query("""
+            select d from DebitNote d
+            where upper(d.tallyVoucherNo) = upper(:no)
+              and upper(coalesce(d.tallyVoucherType, '')) = upper(:type)
+            """)
+    Optional<DebitNote> findByTallyVoucher(@Param("type") String type, @Param("no") String no);
+
+    List<DebitNote> findByNoteDateAndAmount(java.time.LocalDate noteDate, BigDecimal amount);
+
     Optional<DebitNote> findTopByNoteCodeStartingWithOrderByNoteCodeDesc(String prefix);
 
     /** [budgetLineId, quarter, sum] of notes, per outflow row. */

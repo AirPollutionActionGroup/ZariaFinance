@@ -15,7 +15,8 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 
 /**
- * Donor Contact entity - represents contact persons for a donor
+ * A donor's point of contact. A donor has one or more; exactly one is primary
+ * (shown first, used by default). An email appears once per donor.
  */
 @Entity
 @Table(name = "donor_contact")
@@ -23,47 +24,29 @@ import lombok.ToString;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@EqualsAndHashCode(exclude = {"donor", "city", "state"}, callSuper = true)
-@ToString(exclude = {"donor", "city", "state"})
+@EqualsAndHashCode(exclude = {"donor"}, callSuper = true)
+@ToString(exclude = {"donor"})
 public class DonorContact extends AuditEntity {
 
     @ManyToOne
     @JoinColumn(name = "donor_id", nullable = false, foreignKey = @ForeignKey(name = "fk_contact_donor"))
     private DonorMaster donor;
 
+    @Column(name = "contact_name", nullable = false, length = 255)
+    private String name;
+
     @Column(nullable = false, length = 255)
-    private String contactName;
-
-    @Column(length = 100)
-    private String contactTitle;
-
-    @Column(length = 255)
     private String email;
 
-    @Column(length = 20)
-    private String phoneNumber;
+    @Column(name = "phone_number", length = 30)
+    private String phone;
 
-    @Column(length = 20)
-    private String mobileNumber;
-
-    @Column(columnDefinition = "TEXT")
-    private String address;
-
-    @ManyToOne
-    @JoinColumn(name = "city_id", foreignKey = @ForeignKey(name = "fk_contact_city"))
-    private CityMaster city;
-
-    @ManyToOne
-    @JoinColumn(name = "state_id", foreignKey = @ForeignKey(name = "fk_contact_state"))
-    private StateMaster state;
-
-    @Column(length = 20)
-    private String postalCode;
-
-    @Column(length = 50)
-    private String contactType;
-
-    @Column(nullable = false)
+    @Column(name = "is_primary", nullable = false)
     @Builder.Default
     private Boolean isPrimary = false;
+
+    /** Order the contacts were entered in (the primary is always listed first). */
+    @Column(name = "sort_order", nullable = false)
+    @Builder.Default
+    private Integer sortOrder = 0;
 }

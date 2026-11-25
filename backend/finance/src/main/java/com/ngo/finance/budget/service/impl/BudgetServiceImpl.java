@@ -20,6 +20,7 @@ import com.ngo.finance.financialYear.entity.FinancialYear;
 import com.ngo.finance.financialYear.repository.FinancialYearRepository;
 import com.ngo.finance.masters.budgetcategory.entity.BudgetCategory;
 import com.ngo.finance.masters.budgetcategory.repository.BudgetCategoryRepository;
+import com.ngo.finance.programme.ProgrammeTypes;
 import com.ngo.finance.programme.entity.Programme;
 import com.ngo.finance.programme.repository.ProgrammeRepository;
 import java.math.BigDecimal;
@@ -214,12 +215,21 @@ public class BudgetServiceImpl implements BudgetService {
         budget.setFinancialYear(labelOf(year));
         budget.setBudgetType(request.getBudgetType());
 
-        if (request.getBudgetType() == BudgetType.PROGRAMME) {
+        if (request.getBudgetType().needsProgramme()) {
+            boolean projectBudget = request.getBudgetType() == BudgetType.PROJECT;
+            String kind = projectBudget ? "project" : "programme";
             if (request.getProgrammeId() == null) {
-                throw new ValidationException("Select the programme");
+                throw new ValidationException("Select the " + kind);
             }
             Programme programme = programmeRepository.findById(request.getProgrammeId())
-                    .orElseThrow(() -> new ValidationException("Programme " + request.getProgrammeId() + " does not exist"));
+                    .orElseThrow(() -> new ValidationException(
+                            (projectBudget ? "Project " : "Programme ") + request.getProgrammeId() + " does not exist"));
+            // A project budget must point at a Project row, a programme budget at a Programme row.
+            boolean isProject = ProgrammeTypes.PROJECT.equalsIgnoreCase(programme.getType());
+            if (projectBudget != isProject) {
+                throw new ValidationException(programme.getProgrammeName() + " is a "
+                        + (isProject ? "project — choose Project-based budget" : "programme — choose Programme-based budget"));
+            }
             budget.setProgramme(programme);
         } else {
             budget.setProgramme(null); // organisation-wide

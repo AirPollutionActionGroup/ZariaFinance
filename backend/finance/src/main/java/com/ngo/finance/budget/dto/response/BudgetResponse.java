@@ -35,7 +35,7 @@ public class BudgetResponse {
 
     private String financialYearCode;
 
-    /** PROGRAMME | ORGANISATION */
+    /** PROGRAMME | PROJECT | ORGANISATION */
     private String budgetType;
 
     private Long programmeId;

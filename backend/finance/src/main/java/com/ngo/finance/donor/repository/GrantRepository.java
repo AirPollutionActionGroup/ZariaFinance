@@ -20,10 +20,8 @@ public interface GrantRepository extends JpaRepository<GrantAgreement, Long> {
     // rather than Optional avoids IncorrectResultSizeDataAccessException on those.
     List<GrantAgreement> findByFundProfileId(Long fundProfileId);
 
-    @Query("SELECT g FROM GrantAgreement g WHERE g.grantCode LIKE %:searchTerm% OR g.agreementName LIKE %:searchTerm%")
+    @Query("SELECT g FROM GrantAgreement g WHERE g.grantCode LIKE %:searchTerm% OR g.legacyCode LIKE %:searchTerm% OR g.agreementName LIKE %:searchTerm%")
     List<GrantAgreement> searchByCodeOrName(@Param("searchTerm") String searchTerm);
 
-    /** Grant codes sharing a prefix (e.g. "ZRY/GA/2026/") — used to derive the next sequence. */
-    @Query("SELECT g.grantCode FROM GrantAgreement g WHERE g.grantCode LIKE CONCAT(:prefix, '%')")
-    List<String> findGrantCodesByPrefix(@Param("prefix") String prefix);
+    boolean existsByGrantCode(String grantCode);
 }

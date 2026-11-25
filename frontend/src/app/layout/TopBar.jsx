@@ -1,5 +1,6 @@
 import { Avatar, Box, Button, Chip, IconButton, Stack, Tooltip, Typography } from '@mui/material';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
+import MenuRoundedIcon from '@mui/icons-material/MenuRounded';
 import DarkModeOutlinedIcon from '@mui/icons-material/DarkModeOutlined';
 import LightModeOutlinedIcon from '@mui/icons-material/LightModeOutlined';
 import { useNavigate } from 'react-router-dom';
@@ -23,7 +24,7 @@ const ROLE_ACCESS = {
 };
 
 /** Top application bar: identity, review-mode flag, theme toggle and sign-out. */
-export function TopBar() {
+export function TopBar({ onMenu }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { mode, toggleColorMode } = useColorMode();
@@ -62,13 +63,25 @@ export function TopBar() {
         zIndex: 6,
       }}
     >
+      {onMenu ? (
+        <IconButton onClick={onMenu} aria-label="Open menu" edge="start" sx={{ display: { md: 'none' }, mr: { xs: 'auto', sm: 0 } }}>
+          <MenuRoundedIcon />
+        </IconButton>
+      ) : null}
       {user?.mode === 'review' ? (
         <Chip
           size="small"
-          label="Review mode — backend sign-in pending"
+          label={
+            <>
+              Review mode
+              <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                {' '}— backend sign-in pending
+              </Box>
+            </>
+          }
           variant="outlined"
           color="warning"
-          sx={{ mr: 'auto', fontWeight: 600 }}
+          sx={{ mr: 'auto', fontWeight: 600, display: { xs: 'none', sm: 'inline-flex' } }}
         />
       ) : null}
 
@@ -104,7 +117,7 @@ export function TopBar() {
         >
           {initials}
         </Avatar>
-        <Box sx={{ textAlign: 'right' }}>
+        <Box sx={{ textAlign: 'right', display: { xs: 'none', sm: 'block' } }}>
           <Typography variant="body2" fontWeight={600} lineHeight={1.2}>
             {roleLabel}
           </Typography>
@@ -120,9 +133,15 @@ export function TopBar() {
         color="inherit"
         startIcon={<LogoutRoundedIcon sx={{ fontSize: 16 }} />}
         onClick={handleLogout}
+        sx={{ display: { xs: 'none', sm: 'inline-flex' } }}
       >
         Sign out
       </Button>
+      <Tooltip title="Sign out">
+        <IconButton aria-label="Sign out" onClick={handleLogout} size="small" sx={{ display: { sm: 'none' } }}>
+          <LogoutRoundedIcon sx={{ fontSize: 18 }} />
+        </IconButton>
+      </Tooltip>
     </Box>
   );
 }

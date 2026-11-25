@@ -1,6 +1,6 @@
 /**
  * Foreign contribution (FC book) helpers — pure, no React. The backend stores
- * INR only; these derive INR from a foreign amount and an FX rate.
+ * the INR total plus the currency, foreign amount and FX rate it came from.
  */
 
 /** Currencies the backend FX table holds reference rates for (fx_rate seed). */
@@ -20,6 +20,8 @@ export const foreignContributionDefaults = {
   fcAmount: '',
   fcRateDate: todayIso(),
   fcRate: '',
+  /** FBIL / ECB when the reference rate is used as-is, MANUAL when typed over. */
+  fcRateSource: '',
 };
 
 /** "USD 1,20,000" — a foreign amount for display. */

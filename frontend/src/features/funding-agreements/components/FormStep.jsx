@@ -14,7 +14,7 @@ export function FormStep({ id, step, total, title, subtitle, status = 'todo', ac
   const stateLabel = done ? 'Complete' : skipped ? 'Skipped' : null;
 
   return (
-    <Card id={id} component="section" sx={{ overflow: 'hidden', scrollMarginTop: 16 }}>
+    <Card id={id} component="section" sx={{ overflow: 'hidden', scrollMarginTop: 76 }}>
       <Stack
         direction="row"
         spacing={1.75}

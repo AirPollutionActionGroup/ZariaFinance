@@ -58,6 +58,9 @@ public class FundProfileResponse {
         private Long stateId;
         private String stateName;
         private String stateCode;
+        /** Null when the whole state is allowed. */
+        private Long cityId;
+        private String cityName;
     }
 
     @Data
@@ -84,6 +87,14 @@ public class FundProfileResponse {
         private String disbursementTypeLabel;
         /** Lump sum only — the single date the whole committed amount is released on. */
         private LocalDate receivingDate;
+        /** True when this commitment is in a foreign currency (the five fields below are set). */
+        private Boolean foreign;
+        private String currency;
+        private BigDecimal foreignAmount;
+        private BigDecimal fxRate;
+        private LocalDate fxRateDate;
+        private String fxRateSource;
+        private String fxRateSourceLabel;
         private List<TrancheCriterionItem> trancheCriteria;
         /** Sigma of trancheCriteria.amountCriteria. */
         private BigDecimal allocatedAmount;
@@ -98,7 +109,11 @@ public class FundProfileResponse {
     @AllArgsConstructor
     public static class TrancheCriterionItem {
         private Long id;
+        /** Permanent code, e.g. FP-2026-001-T2. */
+        private String trancheCode;
         private BigDecimal amountCriteria;
+        /** FC book only: this tranche in the commitment's foreign currency. */
+        private BigDecimal foreignAmount;
         private LocalDate expectedReleaseDate;
         private String frequency;
         private String frequencyLabel;

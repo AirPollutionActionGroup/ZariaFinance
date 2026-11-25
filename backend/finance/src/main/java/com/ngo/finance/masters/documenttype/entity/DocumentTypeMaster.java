@@ -21,7 +21,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * Document Type master — an identity document a donor can be identified by
- * (PAN Card, Aadhaar Card, Passport ID, …). Donors store the {@code code}.
+ * (PAN Card, Aadhaar Card, Passport ID, …). Donors point at it by id.
  */
 @Entity
 @Table(name = "document_type_master")
@@ -32,10 +32,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class DocumentTypeMaster extends AuditEntity {
 
-    /** Stable identifier stored on donors, e.g. PAN_CARD. Never changes after creation. */
-    @Column(nullable = false, unique = true, length = 50)
-    private String code;
-
     /** Label shown on forms, e.g. "PAN Card". */
     @Column(nullable = false, unique = true, length = 255)
     private String name;
@@ -44,7 +40,7 @@ public class DocumentTypeMaster extends AuditEntity {
     @Builder.Default
     private Boolean status = true;
 
-    /** Domiciles this type applies to; empty = both (domestic and foreign donors). */
+    /** Fund source domiciles this type is offered to — Domestic, Foreign or both; never empty. */
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(
             name = "document_type_master_fund_source_domicile",
@@ -53,6 +49,18 @@ public class DocumentTypeMaster extends AuditEntity {
     @Enumerated(EnumType.STRING)
     @Builder.Default
     private Set<FundSourceDomicile> allowedFundSourceDomiciles = new HashSet<>();
+
+    /**
+     * Donor types that must give this document: a donor of one of them needs an
+     * ID document, and it has to be one of the types marked for its donor type.
+     */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "document_type_master_required_donor_type",
+            joinColumns = @JoinColumn(name = "document_type_id"))
+    @Column(name = "donor_type_id")
+    @Builder.Default
+    private Set<Long> requiredForDonorTypeIds = new HashSet<>();
 
     /** True when a donor with this domicile may use the type (null domicile = not yet chosen). */
     public boolean appliesTo(FundSourceDomicile domicile) {

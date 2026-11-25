@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
-import { Box, Button, Grid, InputAdornment, Stack, TextField, Typography } from '@mui/material';
+import { Box, Grid, IconButton, InputAdornment, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import CurrencyExchangeIcon from '@mui/icons-material/CurrencyExchange';
+import UndoIcon from '@mui/icons-material/Undo';
 import { Controller, useWatch } from 'react-hook-form';
 import { RhfSelect } from '../../../shared/components/index.js';
 import { formatDate } from '../../../lib/format/date.js';
@@ -19,8 +20,16 @@ export {
 
 const CURRENCY_OPTIONS = FC_CURRENCIES.map((c) => ({ value: c, label: `${c} · ${CURRENCY_SYMBOL[c]}` }));
 
+/** FxRateResponse.source → what the user sees under the FX rate. */
+const SOURCE_LABEL = {
+  FBIL: 'RBI/FBIL reference rate',
+  ECB: 'ECB reference rate',
+  MANUAL: 'Saved rate',
+  SEED: 'Placeholder rate (not live)',
+};
+
 /** Plain number field bound to the form; keeps the raw string so typing isn't fought. */
-function NumberField({ name, control, label, adornment, helperText, step = 'any' }) {
+function NumberField({ name, control, label, adornment, endAdornment = null, helperText, helperWarn = false, step = 'any' }) {
   return (
     <Controller
       name={name}
@@ -37,17 +46,21 @@ function NumberField({ name, control, label, adornment, helperText, step = 'any'
           error={Boolean(fieldState.error)}
           helperText={fieldState.error?.message || helperText}
           slotProps={{
+            formHelperText: helperWarn && !fieldState.error ? { sx: { color: 'var(--warn)' } } : undefined,
             htmlInput: { min: 0, step },
-            input: adornment
-              ? {
-                  startAdornment: (
-                    <InputAdornment position="start" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                      {adornment}
-                    </InputAdornment>
-                  ),
-                  sx: { fontVariantNumeric: 'tabular-nums' },
-                }
-              : { sx: { fontVariantNumeric: 'tabular-nums' } },
+            input: {
+              ...(adornment
+                ? {
+                    startAdornment: (
+                      <InputAdornment position="start" sx={{ fontWeight: 700, color: 'text.primary' }}>
+                        {adornment}
+                      </InputAdornment>
+                    ),
+                  }
+                : null),
+              ...(endAdornment ? { endAdornment: <InputAdornment position="end">{endAdornment}</InputAdornment> } : null),
+              sx: { fontVariantNumeric: 'tabular-nums' },
+            },
           }}
         />
       )}
@@ -57,12 +70,14 @@ function NumberField({ name, control, label, adornment, helperText, step = 'any'
 
 /**
  * Foreign contribution (FC book): the donor commits in a foreign currency.
- * The FX rate is looked up from the backend reference table (RBI) for the
- * chosen date and can be overridden; the INR "Total amount committed" is
- * then amount × rate, written back into the form.
+ * The FX rate is looked up through the backend (GET /api/v1/fx-rates), which
+ * asks Frankfurter for the RBI/FBIL reference rate (USD, EUR, GBP, JPY) or the
+ * ECB rate (other currencies / fallback) for the chosen date, and can be
+ * overridden. The hint always shows the rate's source and date. The INR
+ * "Total amount committed" is then amount × rate, written back into the form.
  *
- * Note: the backend stores INR only — currency, foreign amount and rate are
- * used to derive the INR total and are not persisted yet.
+ * The currency, foreign amount, rate, rate date and rate source are saved on
+ * the commitment alongside the INR total (donor_disbursement_rule).
  */
 export function ForeignContributionFields({ control, setValue }) {
   const currency = useWatch({ control, name: 'fcCurrency' });
@@ -75,7 +90,9 @@ export function ForeignContributionFields({ control, setValue }) {
 
   // Auto-fill the reference rate whenever currency/date change — but only the
   // first time for each lookup, so a rate the user typed is never overwritten.
-  const appliedLookup = useRef(null);
+  // A record opened for editing already has its saved rate: count that lookup
+  // as done, so the saved rate isn't replaced by the live one.
+  const appliedLookup = useRef(rate ? `${currency}|${rateDate}` : null);
   useEffect(() => {
     const key = `${currency}|${rateDate}`;
     if (reference != null && appliedLookup.current !== key) {
@@ -91,14 +108,40 @@ export function ForeignContributionFields({ control, setValue }) {
   }, [inr, setValue]);
 
   const usingReference = reference != null && Number(rate) === Number(reference);
+
+  // Record where the rate came from: the reference source when it's used as-is,
+  // MANUAL once typed over. (Saved / placeholder table rows count as MANUAL.)
+  const liveSource = fxQuery.data?.source;
+  const rateSource = usingReference && (liveSource === 'FBIL' || liveSource === 'ECB') ? liveSource : 'MANUAL';
+  const lookupSettled = !fxQuery.isFetching;
+  // A saved rate keeps its saved source until the rate, currency or date is
+  // changed — today's live rate differing from it doesn't make it "manual".
+  const savedRate = useRef(rate ? { key: `${currency}|${rateDate}`, rate: Number(rate) } : null);
+  useEffect(() => {
+    const saved = savedRate.current;
+    if (saved && saved.key === `${currency}|${rateDate}` && saved.rate === Number(rate)) return;
+    savedRate.current = null;
+    if (lookupSettled && Number(rate) > 0) setValue('fcRateSource', rateSource);
+  }, [lookupSettled, rate, rateSource, currency, rateDate, setValue]);
+  // Always say where the rate came from and which day it belongs to.
+  const source = fxQuery.data?.source;
+  const isPlaceholder = usingReference && source === 'SEED';
   let rateHint;
   if (fxQuery.isFetching) rateHint = 'Looking up the reference rate…';
   else if (reference == null && fxQuery.isFetched) rateHint = 'No reference rate for this date — enter it manually';
   else if (usingReference) {
-    rateHint = `${fxQuery.data.source === 'RBI' ? 'RBI' : 'Reference'} rate${
-      fxQuery.data.stale && fxQuery.data.rateDate ? ` from ${formatDate(fxQuery.data.rateDate)}` : ''
-    }`;
-  } else rateHint = 'Entered manually';
+    const sourceLabel = SOURCE_LABEL[source] || 'Reference rate';
+    const day = fxQuery.data.rateDate ? ` · ${formatDate(fxQuery.data.rateDate)}` : '';
+    rateHint = `${sourceLabel}${day}${fxQuery.data.stale ? ' (latest available)' : ''}`;
+  } else {
+    // Rate typed over: keep the live figure in view so it's clear what undo restores.
+    rateHint = reference != null ? `Entered manually · live rate ₹${Number(reference)}` : 'Entered manually';
+  }
+
+  // Undo a manual change: put the live (reference) rate back.
+  const canRestore = reference != null && !usingReference && !fxQuery.isFetching;
+  const restoreLiveRate = () =>
+    setValue('fcRate', String(reference), { shouldValidate: true, shouldDirty: true });
 
   return (
     <Box sx={{ mb: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
@@ -116,15 +159,6 @@ export function ForeignContributionFields({ control, setValue }) {
             This donor gives in a foreign currency. The INR total is calculated as amount × FX rate.
           </Typography>
         </Box>
-        {reference != null && !usingReference ? (
-          <Button
-            size="small"
-            onClick={() => setValue('fcRate', String(reference), { shouldValidate: true, shouldDirty: true })}
-            sx={{ whiteSpace: 'nowrap', flexShrink: 0 }}
-          >
-            Use reference rate
-          </Button>
-        ) : null}
       </Stack>
 
       <Grid container spacing={2} sx={{ p: 2 }}>
@@ -166,6 +200,22 @@ export function ForeignContributionFields({ control, setValue }) {
             label={`FX rate (₹ per ${currency || 'unit'})`}
             adornment="₹"
             helperText={rateHint}
+            helperWarn={isPlaceholder}
+            endAdornment={
+              canRestore ? (
+                <Tooltip title={`Undo — use the live rate ₹${Number(reference)}`}>
+                  <IconButton
+                    size="small"
+                    edge="end"
+                    onClick={restoreLiveRate}
+                    aria-label="Use the live rate"
+                    sx={{ color: 'var(--ok)', '&:hover': { bgcolor: 'var(--ok-bg)' } }}
+                  >
+                    <UndoIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              ) : null
+            }
             step="0.0001"
           />
         </Grid>

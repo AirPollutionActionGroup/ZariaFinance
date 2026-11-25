@@ -3,10 +3,11 @@ import { isHumanActioned } from './disbursementMapper.js';
 
 describe('disbursementMapper', () => {
   describe('isHumanActioned', () => {
-    it('marks the six criteria a person has to action', () => {
+    it('marks the seven criteria a person has to action', () => {
       for (const type of [
         'MILESTONE_BASED',
         'UTILISATION_CERTIFICATE',
+        'AUDITOR_UTILISATION_CERTIFICATE',
         'FINANCIAL_REPORT',
         'NARRATIVE_REPORT',
         'AUDIT_REPORT',

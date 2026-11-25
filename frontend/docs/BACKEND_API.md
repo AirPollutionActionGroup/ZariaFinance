@@ -24,22 +24,29 @@ Base path: `/api` (nginx and the Vite dev server proxy `/api/*` to the backend o
 `DonorResponse` adds: `id`, `status` (DonorStatus), `onboardingStep`, `isActive`,
 `contacts[] (DonorContactResponse)`, audit fields (`createdAt/updatedAt/createdBy/updatedBy`).
 
-## Grants — `GrantController` (`/api/v1/grants`)
+## Funding — `FundingController` (`/api/v1/funding`)
+
+A funding record is a fund profile (the terms) plus the grant agreement signed
+on it, saved together. Its `{id}` is the fund profile's id. This is the only
+API for fund profiles and grant agreements — the old `/api/v1/grants` and
+`/api/v1/fund-profiles` endpoints were removed.
 
 | Method & path | Request | Response | Notes |
 | --- | --- | --- | --- |
-| `POST /api/v1/grants` | `CreateGrantRequest` | `201 GrantDetailsResponse` | `@ValidGrantDates` on the class |
-| `GET /api/v1/grants/{id}` | — | `200 GrantDetailsResponse` | |
-| `GET /api/v1/grants?donorId=&programmeId=&search=` | — | `200 GrantListResponse[]` | exactly one filter applied, priority donorId → programmeId → search |
-| `PUT /api/v1/grants/{id}` | `CreateGrantRequest` | `204` | **stub — does not persist** (gap #5) |
-| `PATCH /api/v1/grants/{id}/approve` | — | `204` | |
-| `PATCH /api/v1/grants/{id}/activate` | — | `204` | |
-| `PATCH /api/v1/grants/{id}/close` | — | `204` | |
+| `GET /api/v1/funding?donorId=&stage=` | — | `200 FundingListItem[]` | one row per record; includes the agreement's `agreementStatus` and `active` |
+| `GET /api/v1/funding/{id}` | — | `200 FundingResponse` | `{ id, stage, terms, agreement }` — `agreement` null until recorded |
+| `POST /api/v1/funding` | `FundingRequest` | `201 FundingResponse` | terms + optional agreement in one transaction |
+| `PUT /api/v1/funding/{id}` | `FundingRequest` | `200 FundingResponse` | `actor` and optional `changeNote` go to the change history |
+| `GET /api/v1/funding/{id}/history` | — | `200 FundingHistoryEntry[]` | every save and status step, newest first |
+| `PATCH /api/v1/funding/{id}/approve` | `ApproveGrantRequest` (optional) | `204` | pending → approved; `?actor=` |
+| `PATCH /api/v1/funding/{id}/hold` | `GrantRemarksRequest` (optional) | `204` | approved → on hold; `?actor=` |
+| `PATCH /api/v1/funding/{id}/resume` | — | `204` | on hold → approved; `?actor=` |
+| `PATCH /api/v1/funding/{id}/complete` | — | `204` | approved → completed; `?actor=` |
+| `PATCH /api/v1/funding/{id}/close` | — | `204` | closes the agreement; `?actor=` |
+| `PATCH /api/v1/funding/{id}/activate` | — | `204` | re-opens a closed, approved agreement; `?actor=` |
 
-`CreateGrantRequest`: `grantCode`*, `donorId`*, `programmeId`*, `agreementName`*,
-`agreementDate`*, `startDate`*, `endDate`*, `totalGrantAmount`* (@Positive, BigDecimal),
-`fundClass`* (enum), `description`, `agreementDocumentPath`. Dates are `LocalDate`
-(`YYYY-MM-DD`).
+Status steps on a record with no agreement yet return `400`; an unknown `{id}`
+returns `404`. A step that doesn't apply to the current state is a no-op.
 
 ## Documents — `DocumentController` (`/api/v1/documents`)
 

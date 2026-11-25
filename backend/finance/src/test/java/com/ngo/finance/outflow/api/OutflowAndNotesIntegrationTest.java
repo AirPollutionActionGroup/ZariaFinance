@@ -48,6 +48,9 @@ public class OutflowAndNotesIntegrationTest {
     private ProgrammeRepository programmeRepository;
 
     @Autowired
+    private com.ngo.finance.masters.overbudgetreason.repository.OverBudgetReasonRepository overBudgetReasonRepository;
+
+    @Autowired
     private FinancialYearRepository financialYearRepository;
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
@@ -109,12 +112,12 @@ public class OutflowAndNotesIntegrationTest {
                 .content(objectMapper.writeValueAsString(body)));
     }
 
-    private static CreateDebitNoteRequest debit(String row, String amount, String reason) {
+    private static CreateDebitNoteRequest debit(String row, String amount, Long reasonId) {
         return CreateDebitNoteRequest.builder()
                 .outflowLineId(row)
                 .date(LocalDate.of(2026, 6, 10))
                 .amount(new BigDecimal(amount))
-                .reason(reason)
+                .overBudgetReasonId(reasonId)
                 .book(ContributionType.LC)
                 .payeeCategory("VENDOR")
                 .payee(new RefDto("PAYEE-003", "Apex Solar Technologies Pvt Ltd"))
@@ -174,10 +177,17 @@ public class OutflowAndNotesIntegrationTest {
                 .andExpect(jsonPath("$.remaining").value(600));
 
         // 400 + 700 > 1000 → over budget: a reason is required.
-        post("/api/v1/debit-notes", debit(q1Row, "700", null)).andExpect(status().isBadRequest());
-        post("/api/v1/debit-notes", debit(q1Row, "700", "ADDITIONAL_CHARGE"))
+        post("/api/v1/debit-notes", debit(q1Row, "700", null))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.overBudgetReasonId").exists());
+        // The reason comes from Masters → Over-budget reasons; an unknown or inactive one is refused.
+        post("/api/v1/debit-notes", debit(q1Row, "700", 999_999L)).andExpect(status().isBadRequest());
+        long additionalCharge = overBudgetReasonRepository.findAllByOrderByNameAsc().stream()
+                .filter(r -> r.getName().equals("Additional charge")).findFirst().orElseThrow().getId();
+        post("/api/v1/debit-notes", debit(q1Row, "700", additionalCharge))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.reason").value("ADDITIONAL_CHARGE"));
+                .andExpect(jsonPath("$.overBudgetReason.id").value(String.valueOf(additionalCharge)))
+                .andExpect(jsonPath("$.overBudgetReason.name").value("Additional charge"));
         mockMvc.perform(get("/api/v1/outflow-budget/" + q1Row))
                 .andExpect(jsonPath("$.remaining").value(-100))
                 .andExpect(jsonPath("$.status").value("PAID"));

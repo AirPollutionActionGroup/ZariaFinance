@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../../../lib/query/queryKeys.js';
+import { donorApi } from '../api/donorApi.js';
 import { donorService } from '../services/donorService.js';
 
 export function useDonors(search) {
@@ -40,5 +41,16 @@ export function useDonorLifecycle(id) {
     mutationFn: (action) =>
       action === 'activate' ? donorService.activateDonor(id) : donorService.deactivateDonor(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.donors.all() }),
+  });
+}
+
+/** Check (dryRun) or import CSV rows of donors. The donor list is refreshed only after a real import. */
+export function useImportDonors() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => donorApi.importRows(payload),
+    onSuccess: (data) => {
+      if (!data?.dryRun) queryClient.invalidateQueries({ queryKey: queryKeys.donors.all() });
+    },
   });
 }

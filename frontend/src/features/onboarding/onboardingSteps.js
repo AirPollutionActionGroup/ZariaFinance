@@ -8,7 +8,7 @@ export const onboardingSteps = [
   },
   {
     title: 'Navigation Rail',
-    description: 'This sidebar is your main navigation rail. You can easily access the Dashboard, the Donors Registry, active Grant Agreements, and track individual Donations. Navigation is permissions-based to keep views clean.',
+    description: 'This sidebar is your main navigation rail. You can easily access the Dashboard, the Donors Registry, Funding Agreements, and the credit and debit notes that record money in and out. Navigation is permissions-based to keep views clean.',
     target: '#tour-sidenav',
     placement: 'right',
     route: '/dashboard',
@@ -29,7 +29,7 @@ export const onboardingSteps = [
   },
   {
     title: 'Recent Grant Agreements',
-    description: 'A summary list of recently signed grant agreements. You can click on any row in the list to drill down into agreement details, schedules, and active disbursements.',
+    description: 'A summary list of recently signed grant agreements. You can click on any row in the list to open its funding record: the agreement, schedule and money received and spent.',
     target: '#tour-recent-grants',
     placement: 'top',
     route: '/dashboard',
@@ -49,18 +49,11 @@ export const onboardingSteps = [
     route: '/donors',
   },
   {
-    title: 'Grant Agreements List',
-    description: 'Next is the Grant Agreements page. Here you track all active, pending, or completed grant contracts, their schedules, and financial classifications.',
-    target: '#tour-new-grant',
+    title: 'Funding Agreements',
+    description: 'Next is Funding Agreements. Each record holds a donor’s terms and the agreement signed on them — track it from terms through approval to completion. Click "New funding" to record one.',
+    target: '#tour-new-funding',
     placement: 'bottom',
-    route: '/grants',
-  },
-  {
-    title: 'Donations Ledger',
-    description: 'Finally, the Donations Ledger tracks individual incoming cash or Gift-In-Kind receipts. Click "New donation" to record a new receipt.',
-    target: '#tour-new-donation',
-    placement: 'bottom',
-    route: '/donations',
+    route: '/funding',
   },
   {
     title: 'Workspace Controls & Help',

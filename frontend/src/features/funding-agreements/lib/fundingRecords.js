@@ -1,12 +1,11 @@
 /**
- * Funding records — the unified view of a fund profile and the grant agreement
- * built on it. The backend keeps them as two resources (a profile backs at
- * most one grant, linked by grant.fundProfileId); this module joins them on the
- * client so users work with one "funding" record through its whole life:
+ * Funding records — a fund profile (the terms) and the grant agreement signed
+ * on it, worked with as one record through its whole life:
  *
  *   Terms (profile only) → Pending approval → Approved → On hold → Completed
  *
- * Pure functions only — no React, no fetching — so the join is unit-testable.
+ * The server joins the two and works out the stage (GET /api/v1/funding); this
+ * module holds the stage metadata and the pure helpers the pages share.
  */
 import { FUND_CLASS_SHORT } from '../../donor-management/constants.js';
 
@@ -56,12 +55,16 @@ export const STAGES = Object.freeze([
 
 export const STAGE_BY_KEY = Object.freeze(Object.fromEntries(STAGES.map((s) => [s.key, s])));
 
-const STAGE_BY_APPROVAL = Object.fromEntries(STAGES.filter((s) => s.approval != null).map((s) => [s.approval, s.key]));
-
-/** Stage key for a profile/grant pair. A grant with an unknown approval state counts as pending. */
-export function stageOf(grant) {
-  if (!grant) return 'terms';
-  return STAGE_BY_APPROVAL[grant.isApproved] || 'pending';
+/**
+ * The agreement's status steps open to it now (PATCH /funding/{id}/<step>).
+ * isApproved: 1 approved · 2 pending · 3 on hold · 4 completed (terminal);
+ * isActive false = closed (only re-activating is open, once approved).
+ */
+export function agreementActions(isApproved, isActive) {
+  if (isApproved === 2) return ['approve'];
+  if (isApproved === 1) return isActive ? ['hold', 'complete', 'close'] : ['activate'];
+  if (isApproved === 3) return ['resume'];
+  return [];
 }
 
 /** "A" | "B" | "C" | null — the backend sends either the letter or the full enum. */
@@ -76,53 +79,6 @@ export function profileCommitted(profile) {
   return (profile?.disbursementRules || []).reduce((sum, rule) => sum + (Number(rule.totalAmount) || 0), 0);
 }
 
-function toRecord(profile, grant) {
-  const hasSchedule = Boolean(profile?.disbursementRules?.length);
-  const committed = grant ? Number(grant.totalGrantAmount) || 0 : profileCommitted(profile);
-  return {
-    key: profile ? `fp-${profile.id}` : `ga-${grant.id}`,
-    profile,
-    grant,
-    profileId: profile?.id ?? null,
-    grantId: grant?.id ?? null,
-    profileCode: profile?.profileCode || null,
-    grantCode: grant?.grantCode || null,
-    donorId: profile?.donorId ?? grant?.donorId ?? null,
-    donorName: profile?.donorName || grant?.donorName || '—',
-    title: grant?.agreementName || profile?.purpose || null,
-    programmeName: profile?.programmeName || null,
-    classCode: classLetter(profile, grant),
-    committed,
-    hasSchedule: grant ? true : hasSchedule,
-    startDate: grant?.startDate || null,
-    endDate: grant?.endDate || null,
-    stage: stageOf(grant),
-    // Legacy grants with no linked profile still open in the old grant view.
-    href: profile ? `/funding/${profile.id}` : `/grants/${grant.id}`,
-  };
-}
-
-/**
- * Join fund profiles with grant agreements into one list of funding records.
- * Every profile yields a record (with its grant, if one exists); grants whose
- * profile isn't in the list are kept as standalone records so nothing is hidden.
- */
-export function buildFundingRecords(profiles = [], grants = []) {
-  const grantByProfile = new Map();
-  for (const grant of grants) {
-    if (grant.fundProfileId != null) grantByProfile.set(String(grant.fundProfileId), grant);
-  }
-  const profileIds = new Set(profiles.map((p) => String(p.id)));
-
-  const records = profiles.map((profile) => toRecord(profile, grantByProfile.get(String(profile.id)) || null));
-  for (const grant of grants) {
-    if (grant.fundProfileId == null || !profileIds.has(String(grant.fundProfileId))) {
-      records.push(toRecord(null, grant));
-    }
-  }
-  return records;
-}
-
 /** Count of records per stage key (every stage present, zero when empty). */
 export function countByStage(records) {
   const counts = Object.fromEntries(STAGES.map((s) => [s.key, 0]));
@@ -134,14 +90,14 @@ export function countByStage(records) {
 export function matchesSearch(record, term) {
   const needle = term.trim().toLowerCase();
   if (!needle) return true;
-  return [record.profileCode, record.grantCode, record.donorName, record.title, record.programmeName]
+  return [record.profileCode, record.grantCode, record.legacyCode, record.donorName, record.title, record.programmeName]
     .some((value) => value && String(value).toLowerCase().includes(needle));
 }
 
-/** FP-2026-014 / ZRY/GA/2026/007 → sortable number, newest highest. */
+/** FP-2026-014 / GA-2026-27-007 → sortable number, newest highest (the agreement's FY start year). */
 export function codeSortValue(record) {
   const fp = /^FP-(\d{4})-(\d+)$/.exec(record.profileCode || '');
   if (fp) return Number(fp[1]) * 1_000_000 + Number(fp[2]);
-  const ga = /(\d{4})\/(\d+)$/.exec(record.grantCode || '');
+  const ga = /^GA-(\d{4})-\d{2}-(\d+)$/.exec(record.grantCode || '');
   return ga ? Number(ga[1]) * 1_000_000 + Number(ga[2]) : null;
 }

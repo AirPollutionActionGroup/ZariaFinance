@@ -22,6 +22,9 @@ public class GrantListResponse {
 
     private String grantCode;
 
+    /** The agreement's number before the GA-{FY}-{nnn} format, if it had one. */
+    private String legacyCode;
+
     private Long fundProfileId;
 
     private String donorName;

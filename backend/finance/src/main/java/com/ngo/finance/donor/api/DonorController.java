@@ -1,6 +1,9 @@
 package com.ngo.finance.donor.api;
 
 import com.ngo.finance.donor.dto.request.CreateDonorRequest;
+import com.ngo.finance.donor.dto.request.DonorImportRequest;
+import com.ngo.finance.donor.dto.response.DonorImportResponse;
+import com.ngo.finance.donor.service.impl.DonorImportService;
 import com.ngo.finance.donor.dto.request.UpdateDonorRequest;
 import com.ngo.finance.donor.dto.response.DonorResponse;
 import com.ngo.finance.donor.service.DonorService;
@@ -32,8 +35,17 @@ public class DonorController {
 
     private final DonorService donorService;
 
-    public DonorController(DonorService donorService) {
+    private final DonorImportService donorImportService;
+
+    public DonorController(DonorService donorService, DonorImportService donorImportService) {
         this.donorService = donorService;
+        this.donorImportService = donorImportService;
+    }
+
+    @PostMapping("/import")
+    @Operation(summary = "Import donors from CSV rows — dryRun checks and reports every row without saving")
+    public ResponseEntity<DonorImportResponse> importDonors(@Valid @RequestBody DonorImportRequest request) {
+        return ResponseEntity.ok(donorImportService.importDonors(request));
     }
 
     @PostMapping

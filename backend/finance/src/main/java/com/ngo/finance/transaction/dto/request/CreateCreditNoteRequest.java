@@ -57,11 +57,28 @@ public class CreateCreditNoteRequest {
     @Size(max = 255)
     private String reference;
 
+    /** Tally voucher type, e.g. "Receipt" — optional, only with a voucher number. */
+    @Size(max = 50)
+    private String tallyVoucherType;
+
+    /** Tally voucher number — one credit note per Tally voucher. */
+    @Size(max = 100)
+    private String tallyVoucherNo;
+
     @Size(max = 1000)
     private String remarks;
 
     @Size(max = 255)
     private String attachmentName;
+
+    /*
+     * FC receipts: the amount in the donor's currency and the rate it was
+     * converted at. All three or none; amount (INR) must equal
+     * foreignAmount × fxRate (±₹1) — see CreditNoteService.
+     */
+    private String currency;
+    private BigDecimal foreignAmount;
+    private BigDecimal fxRate;
 
     @Size(max = 255)
     private String actor;

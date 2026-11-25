@@ -1,4 +1,5 @@
 import { GeographyFields } from './GeographyFields.jsx';
+import { DonorContactsField } from './DonorContactsField.jsx';
 import { Alert, Button, Card, CardContent, Grid, Stack, TextField, Typography } from '@mui/material';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -6,28 +7,32 @@ import { RhfSelect, RhfTextField } from '../../../shared/components/index.js';
 import { applyServerErrors } from '../../../lib/forms/applyServerErrors.js';
 import { donorSchema, donorFormDefaults } from '../validation/donorSchema.js';
 import { FUND_SOURCE_DOMICILE, toOptions } from '../constants.js';
-import { documentTypeAppliesTo, documentTypeService } from '../../masters/services/documentTypeService.js';
+import { documentTypeAppliesTo, documentTypeService, requiredDocumentTypes } from '../../masters/services/documentTypeService.js';
 import { donorService } from '../services/donorService.js';
 import { useState, useEffect } from 'react';
 import { geographyService } from '../services/geographyService.js';
 import { donorTypeService } from '../services/donorTypeService.js';
 
 /*
- * ID types come from the Document Type master (codes such as PAN_CARD). The
+ * ID types come from the Document Type master (by id; known ones such as PAN Card are matched by name). The
  * six built-in codes keep their tailored label / hint / length; any type added
  * in Master Configuration gets a generic "<name> number" field.
  */
-const ID_FIELD = {
-  PAN_CARD: { label: 'PAN Card Number', placeholder: 'e.g. ABCDE1234F (10 chars)', maxLength: 10, upper: true },
-  AADHAAR_CARD: { label: 'Aadhaar Number', placeholder: '12-digit Aadhaar number', maxLength: 12, digits: true },
-  VOTER_ID: { label: 'Voter ID Number', placeholder: 'e.g. ABC1234567', upper: true },
-  DRIVING_LICENSE: { label: 'Driving License Number', placeholder: 'e.g. DL-1420110012345', upper: true },
-  PASSPORT_ID: { label: 'Passport ID', placeholder: 'e.g. A12345678 (9 chars)', maxLength: 9, upper: true },
-  FOREIGN_TAX_ID: { label: 'Foreign Tax Identifier', placeholder: 'e.g. SSN / Tax ID', maxLength: 15 },
-};
+/** Lower-case letters and digits of a name: "PAN Card" → "pancard" — how the known types are recognised. */
+const nameKey = (name) => String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-function idField(idType, typeName) {
-  if (ID_FIELD[idType]) return ID_FIELD[idType];
+const ID_FIELD = {
+  pancard: { label: 'PAN Card Number', placeholder: 'e.g. ABCDE1234F (10 chars)', maxLength: 10, upper: true },
+  aadhaarcard: { label: 'Aadhaar Number', placeholder: '12-digit Aadhaar number', maxLength: 12, digits: true },
+  voterid: { label: 'Voter ID Number', placeholder: 'e.g. ABC1234567', upper: true },
+  drivinglicense: { label: 'Driving License Number', placeholder: 'e.g. DL-1420110012345', upper: true },
+  passportid: { label: 'Passport ID', placeholder: 'e.g. A12345678 (9 chars)', maxLength: 9, upper: true },
+  foreigntaxidentificationnumber: { label: 'Foreign Tax Identifier', placeholder: 'e.g. SSN / Tax ID', maxLength: 15 },
+};
+const isPassport = (type) => nameKey(type?.name).startsWith('passport');
+
+function idField(typeName) {
+  if (ID_FIELD[nameKey(typeName)]) return ID_FIELD[nameKey(typeName)];
   // "GST Number" stays "GST Number"; "CIN Certificate" becomes "CIN Certificate number".
   const label = !typeName
     ? 'ID number'
@@ -92,24 +97,31 @@ export function DonorForm({ mode, defaultValues, onSubmit, submitting, submitErr
       .catch((err) => console.error('Error loading document types', err));
   }, []);
   const savedIdType = defaultValues?.idType || '';
+  // Document types this donor type must give (Master → Document types → "Required for").
+  const requiredDocs = requiredDocumentTypes(documentTypes, donorTypeId, fundSourceDomicile);
+  const requiredNames = requiredDocs.map((t) => t.name).join(' or ');
+  // An edited donor that keeps both its donor type and its document isn't re-checked (as on the server).
+  const unchangedOnEdit = (values) =>
+    mode === 'edit' && values.idType === savedIdType && String(values.donorType) === String(defaultValues?.donorType);
   // An edited donor may keep its saved type as long as its domicile is unchanged.
-  const keepsSavedType = (code) =>
-    code === savedIdType && fundSourceDomicile === defaultValues?.fundSourceDomicile;
+  const keepsSavedType = (id) => id === savedIdType && fundSourceDomicile === defaultValues?.fundSourceDomicile;
   const idTypeOptions = (excludePassport) => {
-    // Only types meant for this donor's fund source domicile (Master → Document Type).
-    const list = documentTypes.filter(
-      (t) => (!excludePassport || t.code !== 'PASSPORT_ID') && documentTypeAppliesTo(t, fundSourceDomicile),
-    );
-    const options = list.map((t) => ({ value: t.code, label: t.name }));
+    // Only types offered to this donor's fund source domicile (Master → Document types);
+    // when the donor type requires documents, only those.
+    const pool = requiredDocs.length ? requiredDocs : documentTypes;
+    const list = pool.filter((t) => (!excludePassport || !isPassport(t)) && documentTypeAppliesTo(t, fundSourceDomicile));
+    const options = list.map((t) => ({ value: String(t.id), label: t.name }));
+    // An edited donor keeps its saved type even if that type was deactivated since.
     if (savedIdType && keepsSavedType(savedIdType) && !options.some((o) => o.value === savedIdType)) {
-      options.push({ value: savedIdType, label: `${savedIdType} (inactive)` });
+      options.push({ value: savedIdType, label: `${defaultValues?.idTypeName || 'Saved ID type'} (inactive)` });
     }
     return [{ value: '', label: 'Select your preference' }, ...options];
   };
-  // Switching domicile (e.g. Domestic → Foreign) clears an ID type that no longer fits.
+
+  // Switching domicile (e.g. Domestic → Foreign) clears an ID type that isn't offered to the new one.
   useEffect(() => {
     if (!idType || keepsSavedType(idType)) return;
-    const type = documentTypes.find((t) => t.code === idType);
+    const type = documentTypes.find((t) => String(t.id) === String(idType));
     if (type && !documentTypeAppliesTo(type, fundSourceDomicile)) {
       setValue('idType', '');
       setValue('idNumber', '');
@@ -118,13 +130,13 @@ export function DonorForm({ mode, defaultValues, onSubmit, submitting, submitErr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fundSourceDomicile, documentTypes, idType, setValue]);
 
-  const idTypeName = documentTypes.find((t) => t.code === idType)?.name;
-  const currentIdField = idField(idType, idTypeName);
+  const idTypeName = documentTypes.find((t) => String(t.id) === String(idType))?.name;
+  const currentIdField = idField(idTypeName);
   const onIdNumberChange = (e) => {
     const formatted = formatIdNumber(currentIdField, e.target.value);
     setValue('idNumber', formatted, { shouldValidate: true });
-    if (idType === 'PAN_CARD') setValue('panCardNumber', formatted);
-    if (idType === 'PASSPORT_ID') setValue('passportNumber', formatted);
+    if (nameKey(idTypeName) === 'pancard') setValue('panCardNumber', formatted);
+    if (nameKey(idTypeName).startsWith('passport')) setValue('passportNumber', formatted);
   };
 
   const selectedDonorType = donorTypes.find((dt) => String(dt.id) === String(donorTypeId));
@@ -181,6 +193,10 @@ export function DonorForm({ mode, defaultValues, onSubmit, submitting, submitErr
   }, [isForeign, setValue]);
 
   const submit = handleSubmit(async (values) => {
+    if (requiredDocs.length && !requiredDocs.some((t) => String(t.id) === String(values.idType)) && !unchangedOnEdit(values)) {
+      setError('idType', { type: 'required', message: `${selectedDonorType?.name || 'This donor type'} donors need ${requiredNames}` });
+      return;
+    }
     try {
       if (typeof onSubmit === 'function') {
         await onSubmit(values);
@@ -190,6 +206,10 @@ export function DonorForm({ mode, defaultValues, onSubmit, submitting, submitErr
         await donorService.createDonor(values);
       }
     } catch (error) {
+      // The server names the backend field (documentTypeId); the form's field is idType.
+      if (error?.fieldErrors?.documentTypeId && !error.fieldErrors.idType) {
+        error.fieldErrors.idType = error.fieldErrors.documentTypeId;
+      }
       applyServerErrors(error, setError);
     }
   });
@@ -272,7 +292,11 @@ export function DonorForm({ mode, defaultValues, onSubmit, submitting, submitErr
                       label="ID type"
                       required
                       options={idTypeOptions(false)}
-                      helperText="Manage the list in Master → Document Type"
+                      helperText={
+                        requiredDocs.length
+                          ? `Required for ${selectedDonorType?.name || 'this donor type'}: ${requiredNames}`
+                          : 'Manage the list in Master → Document Type'
+                      }
                     />
                   </Grid>
                   <Grid size={{ xs: 12, sm: 6 }}>
@@ -340,7 +364,9 @@ export function DonorForm({ mode, defaultValues, onSubmit, submitting, submitErr
                     name="idType"
                     control={control}
                     label="ID type"
+                    required={requiredDocs.length > 0}
                     options={idTypeOptions(true)}
+                    helperText={requiredDocs.length ? `Required for ${selectedDonorType?.name || 'this donor type'}: ${requiredNames}` : undefined}
                   />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
@@ -375,35 +401,13 @@ export function DonorForm({ mode, defaultValues, onSubmit, submitting, submitErr
           </section>
 
           <section>
-            <Typography variant="h4" component="h2" sx={{ mb: 2 }}>
+            <Typography variant="h4" component="h2" sx={{ mb: 0.5 }}>
               Point Of Contact
             </Typography>
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, sm: 4 }}>
-                <RhfTextField
-                  name="spocNameOfThePerson"
-                  control={control}
-                  label="POC name"
-                  required
-                />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 4 }}>
-                <RhfTextField
-                  name="spocPhoneNumber"
-                  control={control}
-                  label="POC phone number"
-                />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 4 }}>
-                <RhfTextField
-                  name="spocEmail"
-                  control={control}
-                  label="POC email"
-                  type="email"
-                  required
-                />
-              </Grid>
-            </Grid>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              The people you deal with at this donor. The primary contact is shown first and used by default.
+            </Typography>
+            <DonorContactsField control={control} setValue={setValue} />
           </section>
 
           {/* ADDRESS SECTION */}

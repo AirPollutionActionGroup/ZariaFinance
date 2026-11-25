@@ -85,6 +85,11 @@ public class DonorFundProfile extends AuditEntity {
     @Builder.Default
     private Boolean onboardingComplete = false;
 
+    /** Last tranche number handed out (codes {profileCode}-T{n}); never decreases, so numbers aren't reused. */
+    @Column(name = "tranche_seq", nullable = false)
+    @Builder.Default
+    private Integer trancheSeq = 0;
+
     @OneToMany(mappedBy = "fundProfile", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<SpendableGeography> geographies = new ArrayList<>();
@@ -96,5 +101,24 @@ public class DonorFundProfile extends AuditEntity {
     @OneToMany(mappedBy = "fundProfile", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<DonorDisbursementRule> disbursementRules = new ArrayList<>();
+
+    /**
+     * Gives every tranche that has no code yet the next one: {profileCode}-T{n}.
+     * New tranches in one save are numbered by expected release date. Call once
+     * the profile code is set.
+     */
+    public void assignTrancheCodes() {
+        int seq = trancheSeq == null ? 0 : trancheSeq;
+        List<DonorTrancheCriterion> uncoded = disbursementRules.stream()
+                .flatMap(rule -> rule.getDonorTrancheCriteria().stream())
+                .filter(t -> t.getTrancheCode() == null)
+                .sorted(java.util.Comparator.comparing(DonorTrancheCriterion::getExpectedReleaseDate,
+                        java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
+                .toList();
+        for (DonorTrancheCriterion tranche : uncoded) {
+            tranche.setTrancheCode(profileCode + "-T" + (++seq));
+        }
+        trancheSeq = seq;
+    }
 
 }

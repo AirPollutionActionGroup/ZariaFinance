@@ -15,7 +15,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import { ConfirmDialog, ErrorState, LoadingState, PageHeader } from '../../../shared/components/index.js';
-import { BOOK } from '../../donation-management/constants.js';
+import { BOOK } from '../../../shared/constants/book.js';
 import { useBankDetail, useBankDetailLifecycle } from '../hooks/useBankDetails.js';
 import { BankAccountNotes } from '../components/BankAccountNotes.jsx';
 

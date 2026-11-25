@@ -34,4 +34,16 @@ public interface CreditNoteRepository extends JpaRepository<CreditNote, Long> {
             + "WHERE c.fundProfileRef IS NOT NULL GROUP BY c.fundProfileRef")
     List<Object[]> sumByFundProfile();
 
+
+    /** Notes with this date and amount — the CSV import compares their references to spot duplicates. */
+    /** The note already booked as this Tally voucher (case-insensitive; a blank type matches no type). */
+    @org.springframework.data.jpa.repository.Query("""
+            select c from CreditNote c
+            where upper(c.tallyVoucherNo) = upper(:no)
+              and upper(coalesce(c.tallyVoucherType, '')) = upper(:type)
+            """)
+    Optional<CreditNote> findByTallyVoucher(@org.springframework.data.repository.query.Param("type") String type,
+                                            @org.springframework.data.repository.query.Param("no") String no);
+
+    List<CreditNote> findByNoteDateAndAmount(java.time.LocalDate noteDate, java.math.BigDecimal amount);
 }

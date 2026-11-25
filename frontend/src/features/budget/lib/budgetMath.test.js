@@ -49,6 +49,12 @@ describe('validateBudget', () => {
     expect(isBudgetValid(org)).toBe(true);
   });
 
+  it('a project budget needs its project', () => {
+    const project = validateBudget({ ...header, budgetType: 'PROJECT', programme: '', lines: [line()] });
+    expect(project.header.programme).toBe('Select the project');
+    expect(isBudgetValid(validateBudget({ ...header, budgetType: 'PROJECT', programme: 'Secondary Education', lines: [line()] }))).toBe(true);
+  });
+
   it('requires category, description and a positive phased amount on each line', () => {
     const errors = validateBudget({
       ...header,

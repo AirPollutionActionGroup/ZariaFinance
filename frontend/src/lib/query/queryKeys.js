@@ -10,29 +10,15 @@ export const queryKeys = {
     list: (search) => ['donors', 'list', { search: search || '' }],
     detail: (id) => ['donors', 'detail', String(id)],
   },
-  grants: {
-    all: () => ['grants'],
-    list: (filters) => ['grants', 'list', filters || {}],
-    detail: (id) => ['grants', 'detail', String(id)],
-    byFundProfile: (fundProfileId) => ['grants', 'byFundProfile', String(fundProfileId)],
-  },
   programmes: {
     all: () => ['programmes'],
     detail: (id) => ['programmes', 'detail', String(id)],
   },
-  fundProfiles: {
-    all: () => ['fundProfiles'],
-    list: () => ['fundProfiles', 'list'],
-    byDonor: (donorId) => ['fundProfiles', 'byDonor', String(donorId)],
-    detail: (id) => ['fundProfiles', 'detail', String(id)],
-  },
-  donations: {
-    all: () => ['donations'],
-    list: (filters) => ['donations', 'list', filters || {}],
-    detail: (id) => ['donations', 'detail', String(id)],
-  },
-  tenantTaxConfig: {
-    all: () => ['tenantTaxConfig'],
+  funding: {
+    all: () => ['funding'],
+    list: (filters) => ['funding', 'list', filters || {}],
+    detail: (id) => ['funding', 'detail', String(id)],
+    history: (id) => ['funding', 'history', String(id)],
   },
   fxRates: {
     all: () => ['fxRates'],
@@ -76,6 +62,10 @@ export const queryKeys = {
   donorTypes: {
     all: () => ['donorTypes'],
     list: (search) => ['donorTypes', 'list', { search: search || '' }],
+  },
+  overBudgetReasons: {
+    all: () => ['overBudgetReasons'],
+    list: (search, activeOnly) => ['overBudgetReasons', 'list', { search: search || '', activeOnly: Boolean(activeOnly) }],
   },
   documentTypes: {
     all: () => ['documentTypes'],

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { isHumanActioned } from '../mappers/disbursementMapper.js';
+import { emptyCriterion, isHumanActioned } from '../mappers/disbursementMapper.js';
 
 const optionalPercent = z
   .union([z.string(), z.number()])
@@ -109,6 +109,7 @@ export const fundProfileSchema = z
     movementAllowed: z.boolean().optional(),
     explanationRequired: z.boolean().optional(),
     onboardingComplete: z.boolean().optional(),
+    selectedCities: z.array(z.string()).optional(),
     selectedGeographies: z.array(z.union([z.string(), z.number()])).optional(),
     utilisationRules: z
       .array(
@@ -134,8 +135,11 @@ export const fundProfileSchema = z
     // the section's shape rules kick in, mirroring the backend FundProfileValidator.
     disbursementType: z.enum(['LUMP_SUM', 'TRANCHES']).optional(),
     totalAmount: z.union([z.string(), z.number()]).optional(),
-    frequency: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY']).optional(),
+    frequency: z.enum(['MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY', 'DATED']).optional(),
     receivingDate: z.string().optional(),
+    // Lump sum release criteria — validated in superRefine only when the
+    // disbursement type is LUMP_SUM, so hidden rows never block Tranches.
+    lumpSumCriteria: z.array(z.any()).optional(),
     tranches: z.array(trancheSchema).optional(),
   })
   .superRefine((data, ctx) => {
@@ -173,6 +177,23 @@ export const fundProfileSchema = z
       if (isBlank(data.receivingDate)) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Expected release date is required', path: ['receivingDate'] });
       }
+      // A lump sum needs at least one release criterion, each complete.
+      const lumpCriteria = data.lumpSumCriteria || [];
+      if (lumpCriteria.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Add at least one release criterion for the lump sum',
+          path: ['lumpSumCriteria'],
+        });
+      }
+      lumpCriteria.forEach((c, i) => {
+        const result = criterionSchema.safeParse(c);
+        if (!result.success) {
+          for (const issue of result.error.issues) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: issue.message, path: ['lumpSumCriteria', i, ...issue.path] });
+          }
+        }
+      });
     } else if (data.disbursementType === 'TRANCHES') {
       const disbursementActive = !isBlank(data.totalAmount) || (data.tranches || []).length > 0;
       if (disbursementActive && isBlank(data.frequency)) {
@@ -216,20 +237,23 @@ export function addOverCommitmentIssues(ctx, tranches, field, committed, totalPa
 }
 
 export const fundProfileFormDefaults = {
+  // Consistent from the start: Restricted money is Class A and programme-tied.
   fundMode: 'RESTRICTED',
-  fundClass: '',
+  fundClass: 'CLASS_A_RESTRICTED',
   purpose: '',
-  programmeTied: false,
+  programmeTied: true,
   programmeId: '',
   reportingFrequency: '',
   movementAllowed: false,
   explanationRequired: false,
   onboardingComplete: false,
   selectedGeographies: [],
+  selectedCities: [],
   utilisationRules: [],
   disbursementType: 'LUMP_SUM',
   totalAmount: '',
   frequency: 'QUARTERLY',
   receivingDate: '',
+  lumpSumCriteria: [emptyCriterion()],
   tranches: [],
 };

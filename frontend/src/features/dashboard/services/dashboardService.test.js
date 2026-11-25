@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeDashboardMetrics, fundingClassRows, recentGrants } from './dashboardService.js';
+import { computeDashboardMetrics, fundingClassRows, grantsFromFunding, recentGrants } from './dashboardService.js';
 
 describe('computeDashboardMetrics', () => {
   it('aggregates donors and grants without inventing numbers, excluding Draft donors', () => {
@@ -70,5 +70,18 @@ describe('recentGrants', () => {
       { id: 3, startDate: '2025-06-01' },
     ];
     expect(recentGrants(grants, 2).map((grant) => grant.id)).toEqual([2, 3]);
+  });
+});
+
+describe('grantsFromFunding', () => {
+  it('turns funding records with an agreement into grant rows', () => {
+    const rows = grantsFromFunding([
+      { profileId: 1, grantId: 11, grantCode: 'GA-1', title: 'Clean air', donorId: 5, donorName: 'Horizon', committed: 1000, startDate: '2026-11-20', active: true, stageLabel: 'Approved' },
+      { profileId: 2, grantId: 12, grantCode: 'GA-2', title: 'Closed one', donorId: 5, donorName: 'Horizon', committed: 500, active: false, stageLabel: 'Approved' },
+      { profileId: 3, grantId: null, profileCode: 'FP-3', stageLabel: 'Terms only' }, // terms only — no agreement, no row
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual(expect.objectContaining({ id: 11, grantCode: 'GA-1', agreementName: 'Clean air', totalGrantAmount: 1000, isActive: true, statusLabel: 'Approved' }));
+    expect(rows[1]).toEqual(expect.objectContaining({ id: 12, isActive: false, statusLabel: 'Closed' }));
   });
 });

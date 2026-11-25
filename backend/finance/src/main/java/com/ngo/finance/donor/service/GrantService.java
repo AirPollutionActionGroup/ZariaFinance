@@ -29,15 +29,15 @@ public interface GrantService {
 
     List<GrantListResponse> searchGrants(String searchTerm);
 
-    void approveGrant(Long id, ApproveGrantRequest request);
+    void approveGrant(Long id, ApproveGrantRequest request, String actor);
 
-    void activateGrant(Long id);
+    void activateGrant(Long id, String actor);
 
-    void closeGrant(Long id);
+    void closeGrant(Long id, String actor);
 
-    void holdGrant(Long id, GrantRemarksRequest request);
+    void holdGrant(Long id, GrantRemarksRequest request, String actor);
 
-    void resumeGrant(Long id);
+    void resumeGrant(Long id, String actor);
 
-    void completeGrant(Long id);
+    void completeGrant(Long id, String actor);
 }

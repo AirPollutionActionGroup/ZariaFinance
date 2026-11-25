@@ -83,6 +83,29 @@ export function computeDashboardMetrics(allDonors, allGrants) {
   };
 }
 
+/**
+ * The dashboard's grant rows, from the funding list (GET /funding): one per
+ * record that has an agreement, in the shape the cards and tables read.
+ */
+export function grantsFromFunding(records) {
+  return records
+    .filter((r) => r.grantId != null)
+    .map((r) => ({
+      id: r.grantId,
+      profileId: r.profileId,
+      grantCode: r.grantCode,
+      agreementName: r.title,
+      donorId: r.donorId,
+      donorName: r.donorName,
+      totalGrantAmount: r.committed,
+      startDate: r.startDate,
+      endDate: r.endDate,
+      status: r.agreementStatus,
+      isActive: r.active !== false,
+      statusLabel: r.active === false ? 'Closed' : r.stageLabel,
+    }));
+}
+
 /** Most recently starting grants for the register preview. */
 export function recentGrants(grants, limit = 8) {
   return [...grants]

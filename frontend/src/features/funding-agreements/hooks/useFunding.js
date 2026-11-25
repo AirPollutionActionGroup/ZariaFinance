@@ -1,50 +1,80 @@
-import { useMemo } from 'react';
-import { useAllFundProfiles, useFundProfile } from '../../donor-management/hooks/useFundProfiles.js';
-import { useGrantByFundProfileId, useGrants } from '../../donor-management/hooks/useGrants.js';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../../lib/query/queryKeys.js';
 import { useInflowBudgetLines } from '../../inflow-budget/hooks/useInflowBudget.js';
 import { useDebitNotes } from '../../debit-notes/hooks/useDebitNotes.js';
 import { useCreditNotes } from '../../credit-notes/hooks/useCreditNotes.js';
-import { buildFundingRecords } from '../lib/fundingRecords.js';
+import { fundingService } from '../services/fundingService.js';
 
-/**
- * Every funding record (fund profile + its grant agreement) — reads the two
- * existing endpoints and joins them client-side. No backend changes.
- */
-export function useFundingRecords() {
-  const profilesQuery = useAllFundProfiles();
-  const grantsQuery = useGrants({});
-
-  const records = useMemo(
-    () => buildFundingRecords(profilesQuery.data || [], grantsQuery.data || []),
-    [profilesQuery.data, grantsQuery.data],
-  );
-
-  const queries = [profilesQuery, grantsQuery];
-  const failed = queries.find((q) => q.isError);
+/** Every funding record (fund profile + its agreement), joined and staged by the server. */
+export function useFundingRecords(filters = {}) {
+  const query = useQuery({
+    queryKey: queryKeys.funding.list(filters),
+    queryFn: () => fundingService.list(filters),
+  });
   return {
-    records,
-    isPending: queries.some((q) => q.isPending),
-    error: failed ? failed.error : null,
-    refetch: () => queries.forEach((q) => q.isError && q.refetch()),
+    records: query.data || [],
+    isPending: query.isPending,
+    error: query.isError ? query.error : null,
+    refetch: query.refetch,
   };
 }
 
-/** One funding record, keyed by fund profile id. `grant` is null until an agreement exists. */
+/** A donor's funding records (list rows) — e.g. the fund pickers on credit / debit notes. Off until a donor is chosen. */
+export function useDonorFunding(donorId) {
+  return useQuery({
+    queryKey: queryKeys.funding.list({ donorId }),
+    queryFn: () => fundingService.list({ donorId }),
+    enabled: donorId != null && donorId !== '',
+  });
+}
+
+/**
+ * The agreement's status steps on funding record `profileId`:
+ * mutate({ action: 'approve' | 'activate' | 'hold' | 'resume' | 'complete' | 'close', payload, actor }).
+ */
+export function useFundingStatusStep(profileId) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ action, payload, actor } = {}) => fundingService.statusStep(profileId, action, payload, actor),
+    onSuccess: () => {
+      // The record, its list row, its history and the dashboard all show the stage.
+      queryClient.invalidateQueries({ queryKey: queryKeys.funding.all() });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
+/**
+ * One funding record, keyed by fund profile id: { profile, grant, stage }.
+ * `grant` is null until an agreement exists. Disabled when profileId is empty.
+ */
+/** A funding record's change history (each save and status step), newest first. */
+export function useFundingHistory(profileId) {
+  return useQuery({
+    queryKey: queryKeys.funding.history(profileId),
+    queryFn: () => fundingService.history(profileId),
+    enabled: profileId != null && profileId !== '',
+  });
+}
+
 export function useFundingRecord(profileId) {
-  const profileQuery = useFundProfile(profileId);
-  const grantQuery = useGrantByFundProfileId(profileId);
+  const query = useQuery({
+    queryKey: queryKeys.funding.detail(profileId),
+    queryFn: () => fundingService.get(profileId),
+    enabled: profileId != null && profileId !== '',
+  });
   return {
-    profile: profileQuery.data || null,
-    grant: grantQuery.data || null,
-    profileQuery,
-    grantQuery,
+    profile: query.data?.profile || null,
+    grant: query.data?.grant || null,
+    stage: query.data?.stage || null,
+    query,
   };
 }
 
 /**
  * Money that has moved against a grant: received (inflow-budget actuals on the
  * profile's tranches), spent (debit notes) and the combined note ledger.
- * Same rules as GrantDetailPage, so both views always agree.
+ * Received = actuals on the profile's tranches; spent = debit notes on the grant.
  */
 export function useFundingMoney(grant, profile) {
   const inflowLinesQuery = useInflowBudgetLines();
@@ -65,6 +95,16 @@ export function useFundingMoney(grant, profile) {
       partyName: type === 'DEBIT' ? n.payee?.name || '—' : n.donor?.name || '—',
       paymentModeLabel: n.paymentMode?.name || '—',
       reference: n.reference,
+      bankAccount: n.bankAccount?.name || null,
+      // What it is for: the tranche a receipt was booked to, or the budget line a payment was charged to.
+      purpose:
+        type === 'DEBIT'
+          ? [n.outflowLineId || n.lineCode, n.line].filter(Boolean).join(' · ') || null
+          : n.tranche?.name
+            ? String(n.tranche.name).split(/\s+[—–-]\s+/)[0]
+            : null,
+      foreign: n.currency && n.foreignAmount != null ? { currency: n.currency, amount: Number(n.foreignAmount) } : null,
+      remarks: n.remarks || null,
       href: `/${type === 'DEBIT' ? 'debit' : 'credit'}-notes/${n.id}`,
     }));
 
@@ -76,9 +116,12 @@ export function useFundingMoney(grant, profile) {
   const trancheIds = new Set(
     (profile?.disbursementRules || []).flatMap((r) => (r.trancheCriteria || []).map((t) => String(t.id))),
   );
-  const received = (inflowLinesQuery.data || [])
-    .filter((line) => trancheIds.has(String(line.id)))
-    .reduce((sum, line) => sum + (Number(line.actualAmount) || 0), 0);
+  const trancheLines = (inflowLinesQuery.data || []).filter((line) => trancheIds.has(String(line.id)));
+  const received = trancheLines.reduce((sum, line) => sum + (Number(line.actualAmount) || 0), 0);
+  // Per tranche (inflow line id = tranche id): what came in and when.
+  const receivedByTranche = Object.fromEntries(
+    trancheLines.map((line) => [String(line.id), { amount: Number(line.actualAmount) || 0, date: line.actualDate || null }]),
+  );
   const spent = transactions
     .filter((t) => t.type === 'DEBIT')
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
@@ -88,6 +131,7 @@ export function useFundingMoney(grant, profile) {
   return {
     transactions,
     received,
+    receivedByTranche,
     spent,
     isLoading: queries.some((q) => q.isPending),
     error: failed ? failed.error : null,

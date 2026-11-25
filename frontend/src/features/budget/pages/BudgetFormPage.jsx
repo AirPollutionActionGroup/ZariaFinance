@@ -1,13 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Alert, Box, Button, Card, CardContent, Grid, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import CategoryOutlinedIcon from '@mui/icons-material/CategoryOutlined';
-import ApartmentOutlinedIcon from '@mui/icons-material/ApartmentOutlined';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../../core/auth/index.js';
 import { ErrorState, LoadingState, PageHeader } from '../../../shared/components/index.js';
 import { BudgetLineEditor, newLine } from '../components/BudgetLineEditor.jsx';
+import { BudgetTypePicker } from '../components/BudgetTypePicker.jsx';
 import { useBudget, useBudgetFinancialYears, useSaveBudget } from '../hooks/useBudgets.js';
 import { FINANCIAL_YEAR_STATUS_LABEL } from '../../financial-year/constants.js';
 import { isBudgetValid, validateBudget } from '../lib/budgetMath.js';
@@ -18,9 +17,10 @@ import { geographyService } from '../../donor-management/services/geographyServi
 import {
   BUDGET_STATUS,
   BUDGET_TYPE,
-  BUDGET_TYPE_HINT,
   CURRENT_FINANCIAL_YEAR,
   budgetTypeOf,
+  isProjectRecord,
+  needsProgramme,
 } from '../constants.js';
 
 /** Only Draft and Rejected budgets can be edited (the server enforces the same). */
@@ -34,7 +34,7 @@ function initialDraft(existing, owner, fyParam) {
       financialYear: existing.financialYear,
       budgetType,
       programmeId: existing.programmeId ?? null,
-      programme: budgetType === 'PROGRAMME' ? existing.programme : '',
+      programme: needsProgramme(budgetType) ? existing.programme : '',
       stateId: existing.stateId ?? null,
       stateName: existing.stateName || '',
       owner: existing.owner,
@@ -82,15 +82,30 @@ function BudgetForm({ existing }) {
 
   // Programme and State come from the real master data (server-backed).
   const programmesQuery = useProgrammes();
+  // Programme budgets pick from Programme records, Project budgets from Project records
+  // (grouped under their parent programme).
+  const isProjectBudget = draft.budgetType === 'PROJECT';
   const programmeOptions = useMemo(() => {
-    const options = (programmesQuery.data || []).map((p) => ({ value: p.id, label: p.programmeName }));
+    const records = (programmesQuery.data || []).filter((p) => isProjectRecord(p) === isProjectBudget);
+    const options = records.map((p) => ({
+      value: p.id,
+      label: p.programmeName,
+      group: isProjectBudget ? p.parentProgrammeName || 'No parent programme' : undefined,
+    }));
+    if (isProjectBudget) options.sort((a, b) => a.group.localeCompare(b.group) || a.label.localeCompare(b.label));
     // A budget saved with a programme name that isn't a Programme record (e.g. seed data) keeps it selectable.
     const saved = existing?.programme;
-    if (budgetTypeOf(existing) === 'PROGRAMME' && saved && !options.some((o) => o.label?.toLowerCase() === saved.toLowerCase())) {
+    if (
+      budgetTypeOf(existing) === draft.budgetType &&
+      draft.budgetType === 'PROGRAMME' &&
+      saved &&
+      !options.some((o) => o.label?.toLowerCase() === saved.toLowerCase())
+    ) {
       options.unshift({ value: `name:${saved}`, label: saved });
     }
     return options;
-  }, [programmesQuery.data, existing]);
+  }, [programmesQuery.data, existing, isProjectBudget, draft.budgetType]);
+  const scopeNoun = isProjectBudget ? 'project' : 'programme';
   // States share the cached list the Fund Profile form uses.
   const statesQuery = useQuery({
     queryKey: ['geography', 'states'],
@@ -105,26 +120,22 @@ function BudgetForm({ existing }) {
     null;
   // The chosen programme's states, from `stateNames` on the /programmes list,
   // matched to the state options by name.
-  const isProgrammeBudget = draft.budgetType === 'PROGRAMME';
+  const isProgrammeBudget = needsProgramme(draft.budgetType);
   const programmeRecord =
     isProgrammeBudget && typeof draft.programmeId === 'number'
       ? (programmesQuery.data || []).find((p) => p.id === draft.programmeId)
       : null;
-  const programmeStateIds = useMemo(() => {
-    const names = new Set((programmeRecord?.stateNames || []).map((n) => n.trim().toLowerCase()));
-    return new Set(stateOptions.filter((o) => names.has(o.label?.trim().toLowerCase())).map((o) => String(o.value)));
-  }, [programmeRecord, stateOptions]);
-  // The programme's own states are listed first, then every other state — nothing is hidden.
-  // A programme with no states set just shows the plain list.
+  /** The state option ids a programme runs in (matched by name); empty when it has none. */
+  const stateIdsOf = useCallback(
+    (programme) => {
+      const names = new Set((programme?.stateNames || []).map((n) => n.trim().toLowerCase()));
+      return new Set(stateOptions.filter((o) => names.has(o.label?.trim().toLowerCase())).map((o) => String(o.value)));
+    },
+    [stateOptions],
+  );
+  const programmeStateIds = useMemo(() => stateIdsOf(programmeRecord), [stateIdsOf, programmeRecord]);
+  // A programme with states → only those states can be picked; one without → every state.
   const hasProgrammeStates = programmeStateIds.size > 0;
-  const programmeStatesGroup = `${draft.programme || 'Programme'} runs in`;
-  const stateGroupOf = (option) => (programmeStateIds.has(String(option.value)) ? programmeStatesGroup : 'All other states');
-  const availableStates = hasProgrammeStates
-    ? [
-        ...stateOptions.filter((o) => programmeStateIds.has(String(o.value))),
-        ...stateOptions.filter((o) => !programmeStateIds.has(String(o.value))),
-      ]
-    : stateOptions;
   const statesLoading = statesQuery.isLoading || (isProgrammeBudget && programmesQuery.isLoading);
 
   const selectedState =
@@ -132,8 +143,15 @@ function BudgetForm({ existing }) {
     // Seed budgets carry only the state name.
     (draft.stateName && stateOptions.find((o) => o.label?.toLowerCase() === draft.stateName.toLowerCase())) ||
     null;
-  // Allowed, but worth pointing out: the budget is placed outside where the programme runs.
+  // Only an older budget can be here (choosing a programme clears a state it doesn't run in):
+  // it keeps showing, with a warning, rather than silently disappearing.
   const stateOutsideProgramme = Boolean(selectedState) && hasProgrammeStates && !programmeStateIds.has(String(selectedState.value));
+  const availableStates = hasProgrammeStates
+    ? [
+        ...stateOptions.filter((o) => programmeStateIds.has(String(o.value))),
+        ...(stateOutsideProgramme ? [selectedState] : []),
+      ]
+    : stateOptions;
 
   const errors = useMemo(() => validateBudget(draft), [draft]);
   const shown = showErrors ? errors : { header: {}, lines: {}, form: null };
@@ -166,16 +184,18 @@ function BudgetForm({ existing }) {
     }
   };
 
+  const fyLabel = selectedFy ? selectedFy.code : `FY ${draft.financialYear}`;
+
   return (
     <Box sx={{ maxWidth: 1400 }}>
       <Button startIcon={<ArrowBackIcon />} size="small" sx={{ mb: 2, color: 'text.secondary' }} onClick={() => navigate(backTo)}>
-        {existing ? existing.budgetCode : 'Budget'}
+        {existing ? existing.budgetCode : 'Budgets'}
       </Button>
 
       <PageHeader
-        eyebrow={selectedFy ? selectedFy.code : `FY ${draft.financialYear}`}
+        eyebrow={fyLabel}
         title={existing ? `Edit ${existing.budgetCode}` : 'New budget'}
-        subtitle="Define the budget header, then add each line with its category, book and quarterly phasing."
+        subtitle="Choose what the budget is for, fill in its details, then phase each line across the four quarters."
       />
 
       {existing?.status === 'REJECTED' ? (
@@ -185,70 +205,100 @@ function BudgetForm({ existing }) {
       ) : null}
       {saveError ? <Alert severity="error" sx={{ mb: 3 }}>{saveError}</Alert> : null}
 
-      <Card sx={{ mb: 3 }}>
-        <CardContent sx={{ p: 3 }}>
-          <Typography variant="h4" component="h2" sx={{ mb: 2 }}>
-            Budget details
-          </Typography>
+      <Stack spacing={3} sx={{ minWidth: 0 }}>
+        <FormSection step={1} title="Budget type" subtitle="What is this budget planned for?">
+          <BudgetTypePicker
+            hideLabel
+            value={draft.budgetType}
+            error={shown.header.budgetType}
+            onChange={(code) =>
+              setDraft((d) =>
+                // A programme can't stand in for a project (or the other way round): switching clears the pick.
+                d.budgetType === code ? d : { ...d, budgetType: code, programmeId: null, programme: '' },
+              )
+            }
+          />
+        </FormSection>
+
+        <FormSection
+          step={2}
+          title="Details"
+          subtitle={
+            isProgrammeBudget
+              ? `Name the budget and choose the ${scopeNoun} and state it covers.`
+              : 'Name the budget and, if it is for one state only, choose it.'
+          }
+        >
           <Grid container spacing={2}>
             <Grid size={12}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
-                Budget type *
-              </Typography>
-              <Box
-                role="radiogroup"
-                aria-label="Budget type"
-                sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}
-              >
-                {Object.entries(BUDGET_TYPE).map(([code, label]) => {
-                  const selected = draft.budgetType === code;
-                  return (
-                    <Box
-                      key={code}
-                      component="button"
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      onClick={() => setDraft((d) => ({ ...d, budgetType: code }))}
-                      sx={{
-                        textAlign: 'left',
-                        font: 'inherit',
-                        color: 'inherit',
-                        cursor: 'pointer',
-                        px: 2,
-                        py: 1.5,
-                        borderRadius: 2,
-                        border: '1.5px solid',
-                        borderColor: selected ? 'primary.main' : 'divider',
-                        bgcolor: selected ? 'action.selected' : 'transparent',
-                        transition: 'border-color .15s ease, background-color .15s ease',
-                        '&:hover': { borderColor: 'primary.main' },
-                        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
-                      }}
-                    >
-                      <Stack direction="row" spacing={1.25} alignItems="flex-start">
-                        {code === 'PROGRAMME' ? (
-                          <CategoryOutlinedIcon sx={{ color: selected ? 'primary.main' : 'text.secondary', mt: 0.25 }} />
-                        ) : (
-                          <ApartmentOutlinedIcon sx={{ color: selected ? 'primary.main' : 'text.secondary', mt: 0.25 }} />
-                        )}
-                        <Box>
-                          <Typography variant="body2" sx={{ fontWeight: 700 }}>{label} budget</Typography>
-                          <Typography variant="caption" color="text.secondary">{BUDGET_TYPE_HINT[code]}</Typography>
-                        </Box>
-                      </Stack>
-                    </Box>
-                  );
-                })}
-              </Box>
-              {shown.header.budgetType ? (
-                <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>{shown.header.budgetType}</Typography>
+              <TextField
+                fullWidth
+                label="Budget name *"
+                placeholder="e.g. Clean Air field operations FY 2026-27"
+                value={draft.name}
+                onChange={set('name')}
+                error={Boolean(shown.header.name)}
+                helperText={shown.header.name}
+              />
+            </Grid>
+            {isProgrammeBudget ? (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <SearchableSelect
+                  // Remount on type change: MUI's Autocomplete can't switch groupBy on and off in place.
+                  key={draft.budgetType}
+                  label={isProjectBudget ? 'Project *' : 'Programme *'}
+                  options={programmeOptions}
+                  groupBy={isProjectBudget ? (o) => o.group : undefined}
+                  value={selectedProgramme}
+                  onChange={(opt) =>
+                    setDraft((d) => {
+                      // A name-only option (seed data) has no Programme record id.
+                      const programmeId = opt && !String(opt.value).startsWith('name:') ? opt.value : null;
+                      // Keep the state only if the new programme runs there (or runs in no set states).
+                      const newStates = stateIdsOf((programmesQuery.data || []).find((p) => p.id === programmeId));
+                      const keepState = d.stateId == null || newStates.size === 0 || newStates.has(String(d.stateId));
+                      return {
+                        ...d,
+                        programmeId,
+                        programme: opt?.label || '',
+                        ...(keepState ? {} : { stateId: null, stateName: '' }),
+                      };
+                    })
+                  }
+                  loading={programmesQuery.isLoading}
+                  placeholder={programmesQuery.isError ? 'Could not load programmes' : `Select the ${scopeNoun}`}
+                  error={shown.header.programme || (programmesQuery.isError ? 'Could not load programmes from the server' : null)}
+                  helperText={
+                    isProjectBudget && programmesQuery.isSuccess && programmeOptions.length === 0
+                      ? 'No projects yet — add one under Programmes (type Project).'
+                      : undefined
+                  }
+                />
+              </Grid>
+            ) : null}
+            <Grid size={{ xs: 12, md: isProgrammeBudget ? 6 : 12 }}>
+              <SearchableSelect
+                label="State (location)"
+                options={availableStates}
+                value={selectedState}
+                onChange={(opt) => setDraft((d) => ({ ...d, stateId: opt?.value ?? null, stateName: opt?.label || '' }))}
+                loading={statesLoading}
+                placeholder="Leave empty for all states"
+                error={statesQuery.isError ? 'Could not load states — the budget will cover all states' : null}
+              />
+              {hasProgrammeStates ? (
+                <Typography
+                  variant="caption"
+                  color={stateOutsideProgramme ? 'warning.main' : 'text.secondary'}
+                  sx={{ display: 'block', mt: -1.5 }}
+                >
+                  {stateOutsideProgramme
+                    ? `${selectedState.label} isn't one of the states ${draft.programme} runs in — pick one of them, or leave empty for all states.`
+                    : `Showing the ${programmeStateIds.size} ${programmeStateIds.size === 1 ? 'state' : 'states'} ${draft.programme} runs in. Leave empty for all of them.`}
+                </Typography>
               ) : null}
             </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth label="Budget name *" value={draft.name} onChange={set('name')} error={Boolean(shown.header.name)} helperText={shown.header.name} />
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
               <TextField
                 select
                 fullWidth
@@ -270,81 +320,87 @@ function BudgetForm({ existing }) {
                 ))}
               </TextField>
             </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <TextField fullWidth label="Budget owner" value={draft.owner} onChange={set('owner')} />
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField fullWidth label="Budget owner" value={draft.owner} onChange={set('owner')} helperText=" " />
             </Grid>
-            {draft.budgetType === 'PROGRAMME' ? (
-              <Grid size={{ xs: 12, md: 6 }}>
-                <SearchableSelect
-                  label="Programme *"
-                  options={programmeOptions}
-                  value={selectedProgramme}
-                  onChange={(opt) =>
-                    setDraft((d) => ({
-                      ...d,
-                      // A name-only option (seed data) has no Programme record id.
-                      programmeId: opt && !String(opt.value).startsWith('name:') ? opt.value : null,
-                      programme: opt?.label || '',
-                    }))
-                  }
-                  loading={programmesQuery.isLoading}
-                  placeholder={programmesQuery.isError ? 'Could not load programmes' : 'Select the programme'}
-                  error={shown.header.programme || (programmesQuery.isError ? 'Could not load programmes from the server' : null)}
-                />
-              </Grid>
-            ) : null}
-            <Grid size={{ xs: 12, md: 6 }}>
-              <SearchableSelect
-                label="State (location)"
-                options={availableStates}
-                groupBy={hasProgrammeStates ? stateGroupOf : undefined}
-                value={selectedState}
-                onChange={(opt) => setDraft((d) => ({ ...d, stateId: opt?.value ?? null, stateName: opt?.label || '' }))}
-                loading={statesLoading}
-                placeholder="Leave empty for all states"
-                error={statesQuery.isError ? 'Could not load states — the budget will cover all states' : null}
+            <Grid size={12}>
+              <TextField
+                fullWidth
+                multiline
+                minRows={2}
+                label="Notes"
+                placeholder="Assumptions, funding source or anything the approver should know"
+                value={draft.notes}
+                onChange={set('notes')}
               />
-              {hasProgrammeStates ? (
-                <Typography
-                  variant="caption"
-                  color={stateOutsideProgramme ? 'warning.main' : 'text.secondary'}
-                  sx={{ display: 'block', mt: -1.5 }}
-                >
-                  {stateOutsideProgramme
-                    ? `${selectedState.label} is outside the states ${draft.programme} runs in.`
-                    : `${draft.programme} runs in ${programmeStateIds.size} ${programmeStateIds.size === 1 ? 'state' : 'states'} — listed first.`}
-                </Typography>
-              ) : null}
-            </Grid>
-            <Grid size={{ xs: 12, md: draft.budgetType === 'PROGRAMME' ? 12 : 6 }}>
-              <TextField fullWidth label="Notes" value={draft.notes} onChange={set('notes')} helperText=" " />
             </Grid>
           </Grid>
-        </CardContent>
-      </Card>
+        </FormSection>
 
-      <Typography variant="h4" component="h2" sx={{ mb: 1.5 }}>
-        Budget lines
-      </Typography>
-      {shown.form ? <Alert severity="error" sx={{ mb: 1.5 }}>{shown.form}</Alert> : null}
-      <BudgetLineEditor lines={draft.lines} errors={shown.lines} onChange={(lines) => setDraft((d) => ({ ...d, lines }))} />
+        <FormSection
+          step={3}
+          title="Budget lines"
+          subtitle="One line per cost item — choose its category and book, then phase the amount across Q1–Q4."
+          error={shown.form}
+        >
+          <BudgetLineEditor lines={draft.lines} errors={shown.lines} onChange={(lines) => setDraft((d) => ({ ...d, lines }))} />
+        </FormSection>
 
-      {showErrors && !isBudgetValid(errors) ? (
-        <Alert severity="error" sx={{ mt: 2 }}>Fix the highlighted fields before saving.</Alert>
-      ) : null}
+        {showErrors && !isBudgetValid(errors) ? (
+          <Alert severity="error">Fix the highlighted fields before saving.</Alert>
+        ) : null}
 
-      <Stack direction="row" spacing={1.5} justifyContent="flex-end" sx={{ mt: 3 }}>
-        <Button variant="outlined" onClick={() => navigate(backTo)}>
-          Cancel
-        </Button>
-        <Button variant="outlined" onClick={() => save(false)} disabled={saveBudget.isPending}>
-          Save as draft
-        </Button>
-        <Button variant="contained" onClick={() => save(true)} disabled={saveBudget.isPending}>
-          {saveBudget.isPending ? 'Saving…' : 'Save & submit for approval'}
-        </Button>
+        <Stack direction="row" spacing={1.5} justifyContent="flex-end">
+          <Button variant="outlined" onClick={() => navigate(backTo)}>
+            Cancel
+          </Button>
+          <Button variant="outlined" onClick={() => save(false)} disabled={saveBudget.isPending}>
+            Save as draft
+          </Button>
+          <Button variant="contained" onClick={() => save(true)} disabled={saveBudget.isPending}>
+            {saveBudget.isPending ? 'Saving…' : 'Save & submit for approval'}
+          </Button>
+        </Stack>
       </Stack>
     </Box>
+  );
+}
+
+/** A numbered form section: step badge, title and one-line hint above its content. */
+function FormSection({ step, title, subtitle, error, children }) {
+  return (
+    <Card component="section" aria-labelledby={`budget-step-${step}`}>
+      <CardContent sx={{ p: { xs: 2, sm: 3 }, '&:last-child': { pb: { xs: 2, sm: 3 } } }}>
+        <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ mb: 2.5 }}>
+          <Box
+            aria-hidden
+            sx={{
+              width: 28,
+              height: 28,
+              flexShrink: 0,
+              borderRadius: '50%',
+              display: 'grid',
+              placeItems: 'center',
+              bgcolor: 'primary.main',
+              color: 'primary.contrastText',
+              fontWeight: 700,
+              fontSize: 13,
+              mt: 0.25,
+            }}
+          >
+            {step}
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography id={`budget-step-${step}`} variant="h6" component="h2" sx={{ fontWeight: 700, lineHeight: 1.3 }}>
+              {title}
+            </Typography>
+            {subtitle ? <Typography variant="body2" color="text.secondary">{subtitle}</Typography> : null}
+          </Box>
+        </Stack>
+        {error ? <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert> : null}
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 

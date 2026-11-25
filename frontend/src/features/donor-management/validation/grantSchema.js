@@ -8,7 +8,7 @@ import { z } from 'zod';
  * Dates & value, section 3 Approval.
  *
  * Not validated here because the server owns them:
- *  - grantCode        auto-generated (ZRY/GA/YYYY/NNN), read-only
+ *  - grantCode        auto-generated (GA-{FY}-NNN, e.g. GA-2026-27-021), read-only
  *  - totalGrantAmount inherited = Σ tranche amounts of the linked fund profile
  *
  * Every grant reports in INR at par — there is no multi-currency support, so

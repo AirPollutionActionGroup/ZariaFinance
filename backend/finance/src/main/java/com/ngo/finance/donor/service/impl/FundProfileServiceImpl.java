@@ -1,6 +1,8 @@
 package com.ngo.finance.donor.service.impl;
 
+import com.ngo.finance.common.enums.FundSourceDomicile;
 import com.ngo.finance.common.exception.ResourceNotFoundException;
+import com.ngo.finance.common.exception.ValidationException;
 import com.ngo.finance.donor.dto.request.CreateFundProfileRequest;
 import com.ngo.finance.donor.dto.response.FundProfileResponse;
 import com.ngo.finance.donor.entity.DonorFundProfile;
@@ -54,9 +56,11 @@ public class FundProfileServiceImpl implements FundProfileService {
         DonorMaster donor = donorRepository.findById(donorId)
                 .orElseThrow(() -> new ResourceNotFoundException("Donor", donorId));
 
+        rejectForeignForDomesticDonor(donor, request);
         DonorFundProfile profile = mapper.toEntity(request);
         profile.setDonor(donor);
         profile.setProfileCode(nextProfileCode(LocalDate.now().getYear()));
+        profile.assignTrancheCodes();
         applyProgramme(request, profile);
 
         DonorFundProfile saved = profileRepository.save(profile);
@@ -114,7 +118,9 @@ public class FundProfileServiceImpl implements FundProfileService {
     public FundProfileResponse updateProfile(Long id, CreateFundProfileRequest request) {
         log.info("Updating fund profile with id: {}", id);
         DonorFundProfile profile = findOrThrow(id);
+        rejectForeignForDomesticDonor(profile.getDonor(), request);
         mapper.updateEntity(request, profile);
+        profile.assignTrancheCodes(); // only tranches added in this edit get a new code
         applyProgramme(request, profile);
         DonorFundProfile saved = profileRepository.save(profile);
         log.info("Fund profile updated: {}", saved.getId());
@@ -134,6 +140,28 @@ public class FundProfileServiceImpl implements FundProfileService {
                 .max()
                 .orElse(0) + 1;
         return prefix + String.format("%03d", next);
+    }
+
+    /**
+     * Foreign-currency fields belong to FC-book donors only. (An FC donor without
+     * them is still allowed, so profiles saved before V131 can be edited.)
+     */
+    private void rejectForeignForDomesticDonor(DonorMaster donor, CreateFundProfileRequest request) {
+        if (donor == null || donor.getFundSourceDomicile() == FundSourceDomicile.FOREIGN
+                || request.getDisbursementRules() == null) {
+            return;
+        }
+        ValidationException error = new ValidationException("A domestic donor's commitment must be in INR");
+        for (int d = 0; d < request.getDisbursementRules().size(); d++) {
+            CreateFundProfileRequest.DisbursementRuleItem rule = request.getDisbursementRules().get(d);
+            if (rule.getCurrency() != null || rule.getForeignAmount() != null || rule.getFxRate() != null) {
+                error.addError("disbursementRules." + d + ".currency",
+                        "Foreign currency is only for donors in the FC book");
+            }
+        }
+        if (!error.getErrors().isEmpty()) {
+            throw error;
+        }
     }
 
     private DonorFundProfile findOrThrow(Long id) {

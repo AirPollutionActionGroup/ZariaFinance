@@ -31,4 +31,9 @@ public class SpendableGeography extends AuditEntity {
     @JoinColumn(name = "state_id", nullable = false, foreignKey = @ForeignKey(name = "fk_donation_location_state"))
     private StateMaster state;
 
+    /** Optional: just this city in the state. Null = the whole state. */
+    @ManyToOne
+    @JoinColumn(name = "city_id", foreignKey = @ForeignKey(name = "fk_geo_city"))
+    private CityMaster city;
+
 }

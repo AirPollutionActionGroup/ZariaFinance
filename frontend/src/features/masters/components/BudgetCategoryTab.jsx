@@ -140,6 +140,7 @@ export function BudgetCategoryTab({ createOpen, onCreateClose, onCreate }) {
 
       <DataTable
         dense
+        flat
         columns={columns}
         rows={rows}
         getRowKey={(r) => r.id}

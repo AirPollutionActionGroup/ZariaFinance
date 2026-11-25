@@ -18,6 +18,7 @@ import com.ngo.finance.donor.enums.DisbursementType;
 import com.ngo.finance.donor.enums.FundClass;
 import com.ngo.finance.donor.enums.FundMode;
 import com.ngo.finance.donor.repository.DonorRepository;
+import com.ngo.finance.funding.dto.FundingRequest;
 import com.ngo.finance.masters.donortype.repository.DonorTypeMasterRepository;
 import com.ngo.finance.outflow.dto.RefDto;
 import com.ngo.finance.transaction.dto.request.CreateCreditNoteRequest;
@@ -90,14 +91,12 @@ public class InflowBudgetCreditNoteIntegrationTest {
                 .donorName("Inflow Donor")
                 .donorType(donorTypeMasterRepository.searchByName("Corporate CSR").get(0))
                 .email("inflow@example.com")
-                .spocNameOfThePerson("Test POC")
-                .spocEmail("poc-inflow@example.com")
                 .isActive(true)
                 .build());
 
         CreateFundProfileRequest profile = CreateFundProfileRequest.builder()
-                .fundMode(FundMode.RESTRICTED)
-                .fundClass(FundClass.CLASS_A_RESTRICTED)
+                .fundMode(FundMode.UNRESTRICTED)
+                .fundClass(FundClass.CLASS_C_UNRESTRICTED)
                 .purpose("Inflow credit note test")
                 .disbursementRules(List.of(DisbursementRuleItem.builder()
                         .totalAmount(new BigDecimal("1000.00"))
@@ -107,11 +106,13 @@ public class InflowBudgetCreditNoteIntegrationTest {
                                 tranche("400.00", LocalDate.of(2026, 12, 1), true)))
                         .build()))
                 .build();
-        JsonNode created = objectMapper.readTree(post("/api/v1/donors/" + donor.getId() + "/fund-profiles", profile)
+        // Fund profiles are created through Funding Agreements (terms only, no agreement).
+        JsonNode created = objectMapper.readTree(post("/api/v1/funding",
+                        FundingRequest.builder().donorId(donor.getId()).terms(profile).build())
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString());
         long fundId = created.get("id").asLong();
-        JsonNode criteria = created.get("disbursementRules").get(0).get("trancheCriteria");
+        JsonNode criteria = created.get("terms").get("disbursementRules").get(0).get("trancheCriteria");
         long first = criteria.get(0).get("id").asLong();
         long second = criteria.get(1).get("id").asLong();
 

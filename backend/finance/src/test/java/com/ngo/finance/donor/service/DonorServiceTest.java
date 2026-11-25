@@ -7,11 +7,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.ngo.finance.donor.dto.request.CreateDonorRequest;
+import com.ngo.finance.donor.dto.request.DonorContactItem;
 import com.ngo.finance.donor.dto.response.DonorResponse;
 import com.ngo.finance.donor.entity.DonorMaster;
 import com.ngo.finance.donor.mapper.DonorMapper;
 import com.ngo.finance.donor.repository.CityRepository;
 import com.ngo.finance.donor.repository.CountryRepository;
+import com.ngo.finance.donor.repository.DonorContactRepository;
 import com.ngo.finance.donor.repository.DonorRepository;
 import com.ngo.finance.donor.repository.StateRepository;
 import com.ngo.finance.donor.service.impl.DonorServiceImpl;
@@ -44,6 +46,9 @@ public class DonorServiceTest {
     private DonorMapper donorMapper;
 
     @Mock
+    private DonorContactRepository donorContactRepository;
+
+    @Mock
     private DonorTypeMasterRepository donorTypeMasterRepository;
 
     @Mock
@@ -59,6 +64,8 @@ public class DonorServiceTest {
         request.setDonorCode("D001");
         request.setDonorName("Test Donor");
         request.setDonorTypeId(1L);
+        request.setContacts(java.util.List.of(
+                DonorContactItem.builder().name(" Asha Rao ").email("asha@example.com").build()));
 
         DonorTypeMaster donorType = DonorTypeMaster.builder().name("Corporate CSR").status(true).build();
         donorType.setId(1L);
@@ -90,6 +97,11 @@ public class DonorServiceTest {
         assertEquals(1L, result.getId());
         assertEquals("D001", result.getDonorCode());
         assertEquals("Test Donor", result.getDonorName());
+        // The contact is attached to the donor, trimmed, and made primary (none was marked).
+        assertEquals(1, donorEntity.getContacts().size());
+        assertEquals("Asha Rao", donorEntity.getContacts().get(0).getName());
+        assertEquals(Boolean.TRUE, donorEntity.getContacts().get(0).getIsPrimary());
+        assertEquals(donorEntity, donorEntity.getContacts().get(0).getDonor());
 
         verify(donorMapper).toEntity(request);
         verify(donorRepository).save(any(DonorMaster.class));

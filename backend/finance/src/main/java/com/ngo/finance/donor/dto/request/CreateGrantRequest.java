@@ -27,7 +27,7 @@ import lombok.NoArgsConstructor;
 @ValidGrantDates
 public class CreateGrantRequest {
 
-    // Optional on create: auto-generated server-side (ZRY/GA/YYYY/NNN) when blank.
+    // Optional on create: auto-generated server-side (GA-{FY}-NNN, e.g. GA-2026-27-021) when blank.
     // Immutable thereafter — ignored on update.
     private String grantCode;
 

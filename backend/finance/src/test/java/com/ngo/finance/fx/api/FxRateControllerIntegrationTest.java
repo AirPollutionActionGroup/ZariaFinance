@@ -14,15 +14,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The rate lookup behind the grant form's FX field. The RBI provider is disabled
- * by default (no feed URL configured), so these exercise the cached-row paths:
- * INR at par, an exact hit, a stale fallback, and no rate at all.
+ * The rate lookup behind the grant form's FX field. Live Frankfurter lookups
+ * are switched off here (no network in tests), so these exercise the cached-row
+ * paths: INR at par, an exact hit, a stale fallback, and no rate at all.
  */
 @SpringBootTest
+@TestPropertySource(properties = "zaria.fx.frankfurter.enabled=false")
 @AutoConfigureMockMvc
 @Transactional
 public class FxRateControllerIntegrationTest {
@@ -98,7 +100,21 @@ public class FxRateControllerIntegrationTest {
 
     @Test
     @WithMockUser
-    void testSeededBaselineRatesAreAvailableForTheFormsCurrencies() throws Exception {
+    void testCurrencyIsCaseInsensitiveAndTheRowsSourceIsReturned() throws Exception {
+        // Its own row, not the V42 seed rows: those may have been removed from a
+        // database (the table is only a fallback), and the test must not depend on them.
+        fxRateRepository.findByCurrencyAndRateDate("USD", LocalDate.of(2026, 1, 1))
+                .ifPresent(fxRateRepository::delete);
+        // Write the delete now: Hibernate would otherwise run the insert below first
+        // and hit the (currency, rate_date) unique key on a database that has the seed row.
+        fxRateRepository.flush();
+        fxRateRepository.save(FxRate.builder()
+                .currency("USD")
+                .rateDate(LocalDate.of(2026, 1, 1))
+                .rateToInr(new BigDecimal("85.0000"))
+                .source("SEED")
+                .build());
+
         mockMvc.perform(get("/api/v1/fx-rates").param("currency", "usd").param("date", "2026-01-01"))
                 .andExpect(status().isOk())
                 // Case-insensitive: the form uppercases, but the API shouldn't rely on it.

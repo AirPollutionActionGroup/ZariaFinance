@@ -4,7 +4,6 @@ import com.ngo.finance.budget.dto.response.BudgetResponse;
 import com.ngo.finance.budget.entity.Budget;
 import com.ngo.finance.budget.entity.BudgetLine;
 import com.ngo.finance.budget.entity.BudgetStatusHistory;
-import com.ngo.finance.budget.enums.BudgetType;
 import org.springframework.stereotype.Component;
 
 /**
@@ -32,7 +31,7 @@ public class BudgetMapper {
     }
 
     private BudgetResponse.BudgetResponseBuilder baseBuilder(Budget budget) {
-        boolean programmeBudget = budget.getBudgetType() == BudgetType.PROGRAMME && budget.getProgramme() != null;
+        boolean programmeBudget = budget.getBudgetType().needsProgramme() && budget.getProgramme() != null;
         return BudgetResponse.builder()
                 .id(budget.getId())
                 .budgetCode(budget.getBudgetCode())

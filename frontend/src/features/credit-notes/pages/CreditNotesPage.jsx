@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
   Autocomplete,
+  Badge,
   Box,
   Button,
   Card,
+  Collapse,
   Grid,
   MenuItem,
   Stack,
@@ -11,23 +13,72 @@ import {
   TableFooter,
   TableRow,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import TuneIcon from '@mui/icons-material/Tune';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import { useNavigate } from 'react-router-dom';
 import { DataTable, PageHeader, SearchField, StatusChip } from '../../../shared/components/index.js';
 import { formatInrExact } from '../../../lib/format/currency.js';
 import { formatDate } from '../../../lib/format/date.js';
 import { downloadCsv, toCsv } from '../../../lib/export/csv.js';
 import { useFinancialYears } from '../../financial-year/hooks/useFinancialYears.js';
-import { BOOK_TONE } from '../../donation-management/constants.js';
-import { BOOKS } from '../../donor-management/lib/donorBook.js';
+import { BOOK_TONE } from '../../../shared/constants/book.js';
+import { formatForeign } from '../../donor-management/lib/foreignContribution.js';
 import { useCreditNotes } from '../hooks/useCreditNotes.js';
-import { MONEY_SX } from '../components/NoteLayout.jsx';
-import { CreditSummaryCard } from '../components/CreditSummaryCard.jsx';
+import { BookSplitBar, FigureStrip, FigureTile, MONEY_SX, pct, plural } from '../components/NoteLayout.jsx';
 import { summarizeCreditNotes } from '../lib/summarizeCreditNotes.js';
 import { donorsOf, EMPTY_FILTERS, filterCreditNotes, hasActiveFilters } from '../lib/filterCreditNotes.js';
+
+/** "FP-2026-024-T1 — USD 700 (₹65,635.5)" → "FP-2026-024-T1" (the tranche snapshot stores its full label). */
+const trancheCodeOf = (name) => String(name || '').split(' — ')[0];
+
+/**
+ * The figures for the notes listed below (they follow the filters): what came
+ * in, how much went back to donor funds, the tranche / lump-sum split, and the
+ * LC / FC split.
+ */
+function CreditFigures({ summary, period, filtered, onClearFilters }) {
+  const lc = summary.byBook.LC.amount;
+  const fc = summary.byBook.FC.amount;
+  const { Tranches: tranches, 'Lump Sum': lump, None: none } = summary.byDisbursement;
+  return (
+    <FigureStrip period={period} count={summary.issuedCount} filtered={filtered} onClearFilters={onClearFilters}>
+      <FigureTile
+        label="Total credited"
+        value={formatInrExact(summary.issuedTotal)}
+        color={summary.issuedTotal ? 'success.main' : 'text.disabled'}
+        sub={plural(summary.issuedCount, 'note')}
+      />
+      <FigureTile
+        label="Returned to funds"
+        value={formatInrExact(summary.toFundTotal)}
+        sub={
+          summary.toFundCount
+            ? `${pct(summary.toFundTotal, summary.issuedTotal)}% · ${plural(summary.fundCount, 'fund')} · ${plural(summary.donorCount, 'donor')}`
+            : 'None returned to a donor fund'
+        }
+      />
+      <FigureTile
+        label="By disbursement"
+        value={`Tranches ${formatInrExact(tranches.amount)}`}
+        sub={[
+          `Lump sum ${formatInrExact(lump.amount)}`,
+          none.count ? `No fund ${formatInrExact(none.amount)}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+      />
+      <FigureTile label="By book" value={`LC ${formatInrExact(lc)}`} sub={`FC ${formatInrExact(fc)}`}>
+        <BookSplitBar lc={lc} fc={fc} />
+      </FigureTile>
+    </FigureStrip>
+  );
+}
 
 /** All credit notes — /credit-notes. Money that came back, optionally returned to a donor fund. */
 export function CreditNotesPage() {
@@ -35,6 +86,7 @@ export function CreditNotesPage() {
   const notesQuery = useCreditNotes();
   const notes = useMemo(() => notesQuery.data || [], [notesQuery.data]);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // Financial year: null = not touched yet, so it follows the year marked
   // current; 'All' or an id once the user picks one.
@@ -53,6 +105,9 @@ export function CreditNotesPage() {
     setFilters(EMPTY_FILTERS);
     setFyChoice(null);
   };
+
+  // Filters tucked under "More filters" — counted on its button so none is hidden unnoticed.
+  const moreCount = [filters.donor, filters.from, filters.to].filter(Boolean).length;
 
   // The summary follows the filters, so it always describes the rows shown below.
   const summary = useMemo(() => summarizeCreditNotes(filtered), [filtered]);
@@ -74,8 +129,13 @@ export function CreditNotesPage() {
         { header: 'Group', value: (n) => n.group?.name },
         { header: 'Ledger / payment type', value: (n) => n.ledger?.name },
         { header: 'Reference', value: (n) => n.reference },
+        { header: 'Tally voucher type', value: (n) => n.tallyVoucherType },
+        { header: 'Tally voucher no.', value: (n) => n.tallyVoucherNo },
         { header: 'Remarks', value: (n) => n.remarks },
         { header: 'Attachment', value: (n) => n.attachment?.name },
+        { header: 'Currency', value: (n) => n.currency },
+        { header: 'Foreign amount', value: (n) => n.foreignAmount },
+        { header: 'FX rate', value: (n) => n.fxRate },
         { header: 'Amount (INR)', value: (n) => n.amount },
         { header: 'Issued by', value: (n) => n.createdBy },
       ],
@@ -123,7 +183,9 @@ export function CreditNotesPage() {
           <Box>
             <StatusChip label={n.disbursementType} tone={n.disbursementType === 'Tranches' ? 'info' : 'neutral'} />
             {n.tranche ? (
-              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5 }}>{n.tranche.name}</Typography>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.5, fontFamily: 'monospace' }}>
+                {trancheCodeOf(n.tranche.name)}
+              </Typography>
             ) : null}
           </Box>
         ) : (
@@ -138,7 +200,9 @@ export function CreditNotesPage() {
         <Box>
           <Typography variant="body2">{n.paymentMode?.name || '—'}</Typography>
           <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-            {[n.bankAccount?.name, n.reference].filter(Boolean).join(' · ')}
+            {[n.bankAccount?.name, n.reference, n.tallyVoucherNo ? `Tally ${[n.tallyVoucherType, n.tallyVoucherNo].filter(Boolean).join(' ')}` : null]
+              .filter(Boolean)
+              .join(' · ')}
           </Typography>
         </Box>
       ),
@@ -155,8 +219,13 @@ export function CreditNotesPage() {
       align: 'right',
       sortValue: (n) => n.amount,
       render: (n) => (
-        <Box sx={{ ...MONEY_SX, fontWeight: 700, color: 'success.main' }}>
-          {formatInrExact(n.amount)}
+        <Box>
+          <Box sx={{ ...MONEY_SX, fontWeight: 700, color: 'success.main' }}>{formatInrExact(n.amount)}</Box>
+          {n.currency ? (
+            <Typography variant="caption" color="text.secondary" sx={{ ...MONEY_SX, display: 'block' }}>
+              {formatForeign(n.currency, n.foreignAmount)}
+            </Typography>
+          ) : null}
         </Box>
       ),
     },
@@ -180,102 +249,127 @@ export function CreditNotesPage() {
     <Box sx={{ maxWidth: 1400 }}>
       <PageHeader
         title="Credit Notes"
-        subtitle="Money that came back — refunds, reversed overcharges, rebates — and the donor fund it was returned to."
+        subtitle="Money received back — refunds, reversed overcharges, rebates — and the donor fund it was returned to."
         actions={
-          <Button variant="contained" color="success" startIcon={<AddIcon />} onClick={() => navigate('/credit-notes/new')}>
-            New credit note
-          </Button>
+          <Stack direction="row" spacing={1.5}>
+            <Button color="inherit" onClick={() => navigate('/debit-notes')} sx={{ color: 'text.secondary' }}>
+              Debit notes
+            </Button>
+            <Button variant="contained" color="success" startIcon={<AddIcon />} onClick={() => navigate('/credit-notes/new')}>
+              New credit note
+            </Button>
+          </Stack>
         }
       />
 
-      <CreditSummaryCard
+      <CreditFigures
         summary={summary}
-        period={selectedFy ? `FY ${selectedFy.code} · ${formatDate(selectedFy.startDate)} – ${formatDate(selectedFy.endDate)}` : 'All financial years'}
+        period={selectedFy ? `${selectedFy.code} · ${formatDate(selectedFy.startDate)} – ${formatDate(selectedFy.endDate)}` : 'All financial years'}
         filtered={anyFilter}
-        totalCount={notes.length}
         onClearFilters={clearFilters}
       />
 
-      <Card sx={{ p: 2, mb: 2 }}>
-        <Grid container spacing={1.5} alignItems="center">
-          <Grid size={{ xs: 12, md: 4 }}>
-            <SearchField placeholder="Search note no., fund, tranche, reference…" value={filters.query} onChange={setFilter('query')} />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-            <Autocomplete
-              size="small"
-              options={donorOptions}
-              value={filters.donor}
-              onChange={(_, donor) => setFilter('donor')(donor || null)}
-              getOptionLabel={(d) => d.name}
-              isOptionEqualToValue={(a, b) => String(a.id ?? a.name) === String(b.id ?? b.name)}
-              renderInput={(params) => <TextField {...params} placeholder="All donors" />}
-            />
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-            <TextField select fullWidth size="small" value={filters.book} onChange={(e) => setFilter('book')(e.target.value)}>
-              <MenuItem value="All">All Books</MenuItem>
-              {BOOKS.map((b) => (
-                <MenuItem key={b.value} value={b.value}>{b.label}</MenuItem>
-              ))}
-            </TextField>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-            <TextField
-              select
-              fullWidth
-              size="small"
-              label="Financial year"
-              value={fyValue}
-              onChange={(e) => setFyChoice(e.target.value)}
-              disabled={financialYearsQuery.isLoading}
-              helperText={financialYearsQuery.isError ? "Couldn't load financial years" : undefined}
-              error={financialYearsQuery.isError}
-            >
-              <MenuItem value="All">All Financial Years</MenuItem>
-              {financialYears.map((fy) => (
-                <MenuItem key={fy.id} value={String(fy.id)}>
-                  {fy.code}
-                  {fy.current ? ' (current)' : ''}
-                </MenuItem>
-              ))}
-            </TextField>
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-            <TextField
-              fullWidth
-              size="small"
-              type="date"
-              label="From"
-              value={filters.from}
-              onChange={(e) => setFilter('from')(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: filters.to || undefined } }}
-            />
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-            <TextField
-              fullWidth
-              size="small"
-              type="date"
-              label="To"
-              value={filters.to}
-              onChange={(e) => setFilter('to')(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: filters.from || undefined } }}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Stack direction="row" spacing={1} justifyContent={{ sm: 'flex-end' }}>
-              {anyFilter ? (
-                <Button size="small" color="inherit" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-              ) : null}
-              <Button size="small" variant="outlined" startIcon={<FileDownloadOutlinedIcon />} onClick={handleExport} disabled={!filtered.length}>
-                Export CSV
+      {/* Filter bar: the common filters in one row, the rest under "More filters". */}
+      <Card variant="outlined" sx={{ mb: 2, borderRadius: 3 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25} sx={{ p: 1.5, alignItems: { md: 'center' } }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <SearchField placeholder="Search note, donor, fund, tranche, reference or Tally no." value={filters.query} onChange={setFilter('query')} />
+          </Box>
+          <TextField
+            select
+            size="small"
+            value={fyValue}
+            onChange={(e) => setFyChoice(e.target.value)}
+            disabled={financialYearsQuery.isLoading}
+            error={financialYearsQuery.isError}
+            sx={{ minWidth: 190 }}
+            slotProps={{ htmlInput: { 'aria-label': 'Financial year' } }}
+          >
+            <MenuItem value="All">All financial years</MenuItem>
+            {financialYears.map((fy) => (
+              <MenuItem key={fy.id} value={String(fy.id)}>
+                {fy.code}
+                {fy.current ? ' · current' : ''}
+              </MenuItem>
+            ))}
+          </TextField>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={filters.book}
+            onChange={(_, value) => value && setFilter('book')(value)}
+            aria-label="Book"
+          >
+            {['All', 'LC', 'FC'].map((b) => (
+              <ToggleButton key={b} value={b} sx={{ px: 1.75, fontWeight: 600, textTransform: 'none' }}>
+                {b === 'All' ? 'All books' : b}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <Badge color="success" badgeContent={moreCount} invisible={!moreCount}>
+              <Button
+                variant={moreOpen ? 'contained' : 'outlined'}
+                color="inherit"
+                startIcon={<TuneIcon />}
+                onClick={() => setMoreOpen((o) => !o)}
+                aria-expanded={moreOpen}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                More filters
               </Button>
-            </Stack>
+            </Badge>
+            <Button variant="outlined" startIcon={<UploadFileOutlinedIcon />} onClick={() => navigate('/credit-notes/import')} sx={{ whiteSpace: 'nowrap' }}>
+              Import
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<FileDownloadOutlinedIcon />}
+              onClick={handleExport}
+              disabled={!filtered.length}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              Export
+            </Button>
+          </Stack>
+        </Stack>
+        <Collapse in={moreOpen}>
+          <Grid container spacing={1.5} sx={{ px: 1.5, pb: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+            <Grid size={{ xs: 12, md: 6 }} sx={{ pt: 1.5 }}>
+              <Autocomplete
+                size="small"
+                options={donorOptions}
+                value={filters.donor}
+                onChange={(_, donor) => setFilter('donor')(donor || null)}
+                getOptionLabel={(d) => d.name}
+                isOptionEqualToValue={(a, b) => String(a.id ?? a.name) === String(b.id ?? b.name)}
+                renderInput={(params) => <TextField {...params} label="Donor" placeholder="All donors" />}
+              />
+            </Grid>
+            <Grid size={{ xs: 6, md: 3 }} sx={{ pt: 1.5 }}>
+              <TextField
+                fullWidth
+                size="small"
+                type="date"
+                label="From"
+                value={filters.from}
+                onChange={(e) => setFilter('from')(e.target.value)}
+                slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: filters.to || undefined } }}
+              />
+            </Grid>
+            <Grid size={{ xs: 6, md: 3 }} sx={{ pt: 1.5 }}>
+              <TextField
+                fullWidth
+                size="small"
+                type="date"
+                label="To"
+                value={filters.to}
+                onChange={(e) => setFilter('to')(e.target.value)}
+                slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: filters.from || undefined } }}
+              />
+            </Grid>
           </Grid>
-        </Grid>
+        </Collapse>
       </Card>
 
       <DataTable
@@ -293,7 +387,7 @@ export function CreditNotesPage() {
           !notes.length
             ? 'Raise a credit note when money comes back — a refund, a rebate.'
             : selectedFy && !hasActiveFilters(filters)
-              ? `Nothing recorded in FY ${selectedFy.code} — pick another financial year or All Financial Years.`
+              ? `Nothing recorded in ${selectedFy.code} — pick another financial year or All financial years.`
               : 'Try another financial year, widening the date range, or clearing filters.'
         }
       />

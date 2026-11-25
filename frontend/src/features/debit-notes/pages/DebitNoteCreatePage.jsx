@@ -36,8 +36,7 @@ import { usePaymentTypeGroups } from '../../payment-type/hooks/usePaymentTypeGro
 import { usePaymentTypeLedgers } from '../../payment-type/hooks/usePaymentTypeLedgers.js';
 import { useBankDetails } from '../../bank-details/hooks/useBankDetails.js';
 import { useDonors } from '../../donor-management/hooks/useDonors.js';
-import { useFundProfilesByDonor } from '../../donor-management/hooks/useFundProfiles.js';
-import { useGrantByFundProfileId } from '../../donor-management/hooks/useGrants.js';
+import { useDonorFunding, useFundingRecord } from '../../funding-agreements/hooks/useFunding.js';
 import { BOOKS, donorBook } from '../../donor-management/lib/donorBook.js';
 import { useInflowBudgetLines } from '../../inflow-budget/hooks/useInflowBudget.js';
 import { computeGrantBalance } from '../lib/grantBalance.js';
@@ -49,7 +48,8 @@ import { FundSuggestionsDialog } from '../components/FundSuggestionsDialog.jsx';
 import { FundSuggestionBanner } from '../components/FundSuggestionBanner.jsx';
 import { useCreditNotes } from '../../credit-notes/hooks/useCreditNotes.js';
 import { Figure, FormSection, MONEY_SX } from '../../credit-notes/components/NoteLayout.jsx';
-import { ATTACHMENT_ACCEPT, ATTACHMENT_MAX_BYTES, DEBIT_NOTE_REASON, PAYEE_CATEGORIES } from '../constants.js';
+import { ATTACHMENT_ACCEPT, ATTACHMENT_MAX_BYTES, PAYEE_CATEGORIES } from '../constants.js';
+import { useActiveOverBudgetReasons } from '../../masters/hooks/useOverBudgetReasons.js';
 
 const MAX_MB = ATTACHMENT_MAX_BYTES / (1024 * 1024);
 /** Employee Master statuses that can still be paid — must match EMPLOYEE_STATUSES verbatim. */
@@ -87,6 +87,8 @@ function initialForm(line) {
     donorId: '',
     fundId: '',
     reference: '',
+    tallyVoucherType: '',
+    tallyVoucherNo: '',
     remarks: '',
     file: null,
   };
@@ -293,19 +295,23 @@ function DebitNoteForm({ lines, allNotes, allCredits }) {
     [donors, form.book],
   );
 
-  const fundProfilesQuery = useFundProfilesByDonor(form.donorId || undefined);
+  // The donor's funding records; the chosen one's terms and agreement come from GET /funding/{id}.
+  const fundProfilesQuery = useDonorFunding(form.donorId || undefined);
   const fundOptions = useMemo(
     () =>
-      (fundProfilesQuery.data || []).map((f) => ({
-        value: f.id,
-        label: f.purpose || `${f.fundClassLabel || 'Fund profile'} · #${f.id}`,
-      })),
+      (fundProfilesQuery.data || [])
+        .filter((r) => r.profileId != null)
+        .map((r) => ({
+          value: r.profileId,
+          label: [r.profileCode, r.title || (r.classCode ? `Class ${r.classCode}` : 'Fund profile')].filter(Boolean).join(' · '),
+        })),
     [fundProfilesQuery.data],
   );
 
   // A fund profile backs at most one grant agreement — shown read-only, not picked.
-  const grantQuery = useGrantByFundProfileId(form.fundId || undefined);
-  const assignedGrant = form.fundId ? grantQuery.data || null : null;
+  const fundRecord = useFundingRecord(form.fundId || undefined);
+  const grantQuery = fundRecord.query;
+  const assignedGrant = form.fundId ? fundRecord.grant : null;
 
   // Available balance on the chosen fund: received on its tranches (Inflow Budget) − debit notes already charged to it.
   const inflowLinesQuery = useInflowBudgetLines();
@@ -314,7 +320,7 @@ function DebitNoteForm({ lines, allNotes, allCredits }) {
     (inflowLinesQuery.data || []).forEach((line) => map.set(Number(line.id), line));
     return map;
   }, [inflowLinesQuery.data]);
-  const currentFundProfile = (fundProfilesQuery.data || []).find((f) => f.id === form.fundId) || null;
+  const currentFundProfile = form.fundId ? fundRecord.profile : null;
 
   const grantBalance = currentFundProfile
     ? computeGrantBalance({
@@ -334,6 +340,8 @@ function DebitNoteForm({ lines, allNotes, allCredits }) {
   const remainingAfter = form.line ? rowRemaining(form.line, debitTotals) - thisNote : 0;
   // Reason is only asked for when this note takes the line over budget.
   const isOverBudget = Boolean(form.line) && remainingAfter < 0;
+  // Over-budget reasons come from Masters → Over-budget reasons (active ones).
+  const reasons = useActiveOverBudgetReasons().data || [];
   // A debit charged to a fund can't be for more than the fund has available (the server checks the same).
   const fundAvailable =
     grantBalance && !inflowLinesQuery.isLoading && !inflowLinesQuery.isError ? Math.max(grantBalance.available, 0) : null;
@@ -415,7 +423,7 @@ function DebitNoteForm({ lines, allNotes, allCredits }) {
           outflowLineId: form.line.id,
           date: form.date,
           amount,
-          reason: isOverBudget ? form.reason : null, // drop a stale pick if the amount came back within budget
+          overBudgetReasonId: isOverBudget ? form.reason : null, // drop a stale pick if the amount came back within budget
           book: form.book,
           payeeCategory: form.payeeCategory,
           payee: snapshot(payeeOptions, form.payeeId),
@@ -427,6 +435,8 @@ function DebitNoteForm({ lines, allNotes, allCredits }) {
           fundProfile: snapshot(fundOptions, form.fundId),
           grant: assignedGrant ? { id: assignedGrant.id, name: assignedGrant.grantCode } : null,
           reference: form.reference,
+          tallyVoucherType: form.tallyVoucherType,
+          tallyVoucherNo: form.tallyVoucherNo,
           remarks: form.remarks,
           // Only the file name is saved for now — there's no file upload service yet.
           attachment: form.file ? { name: form.file.name } : null,
@@ -435,7 +445,8 @@ function DebitNoteForm({ lines, allNotes, allCredits }) {
       navigate(`/debit-notes/${note.id}`, { state: { justIssued: true } });
     } catch (err) {
       // Server rule failures (e.g. an over-budget note without a reason) come back readable.
-      setSaveError(err.message || 'Could not issue the debit note.');
+      const fieldMessage = err.fieldErrors ? Object.values(err.fieldErrors).find(Boolean) : null;
+      setSaveError(fieldMessage || err.message || 'Could not issue the debit note.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
@@ -577,9 +588,17 @@ function DebitNoteForm({ lines, allNotes, allCredits }) {
                 helperText={show('reason') || 'This note takes the line over budget'}
                 slotProps={{ formHelperText: { sx: { color: show('reason') ? undefined : 'warning.main' } } }}
               >
-                {Object.entries(DEBIT_NOTE_REASON).map(([code, label]) => (
-                  <MenuItem key={code} value={code}>{label}</MenuItem>
-                ))}
+                {reasons.length ? (
+                  reasons.map((r) => (
+                    <MenuItem key={r.id} value={String(r.id)}>
+                      {r.name}
+                    </MenuItem>
+                  ))
+                ) : (
+                  <MenuItem value="" disabled>
+                    No active reasons — add some in Masters → Over-budget reasons
+                  </MenuItem>
+                )}
               </TextField>
             </Grid>
           ) : null}
@@ -775,6 +794,31 @@ function DebitNoteForm({ lines, allNotes, allCredits }) {
               onChange={(opt) => setValue('ledgerId', opt?.value || '')}
               disabled={!form.groupId || ledgerOptions.length === 0}
               placeholder={form.groupId ? undefined : 'Select a group first'}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+            <TextField
+              fullWidth
+              label="Tally voucher no."
+              placeholder="e.g. 118"
+              value={form.tallyVoucherNo}
+              onChange={set('tallyVoucherNo')}
+              error={Boolean(form.tallyVoucherType.trim() && !form.tallyVoucherNo.trim())}
+              helperText={
+                form.tallyVoucherType.trim() && !form.tallyVoucherNo.trim()
+                  ? 'Enter the voucher number too'
+                  : 'Optional — each Tally voucher can be on one debit note'
+              }
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+            <TextField
+              fullWidth
+              label="Tally voucher type"
+              placeholder="e.g. Payment"
+              value={form.tallyVoucherType}
+              onChange={set('tallyVoucherType')}
+              helperText="If this payment is already in Tally"
             />
           </Grid>
         </FormSection>

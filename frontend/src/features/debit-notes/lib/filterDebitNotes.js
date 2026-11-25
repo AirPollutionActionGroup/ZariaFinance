@@ -35,6 +35,7 @@ export function filterDebitNotes(notes, filters, lineById = {}) {
       n.outflowLineId,
       lineById[n.outflowLineId]?.line,
       n.reference,
+      n.tallyVoucherNo,
       n.remarks,
       n.payee?.name,
       n.ledger?.name,

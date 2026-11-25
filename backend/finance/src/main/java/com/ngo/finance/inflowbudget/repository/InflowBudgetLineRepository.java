@@ -1,5 +1,6 @@
 package com.ngo.finance.inflowbudget.repository;
 
+import java.util.Optional;
 import com.ngo.finance.donor.entity.DonorTrancheCriterion;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -21,4 +22,7 @@ public interface InflowBudgetLineRepository extends JpaRepository<DonorTrancheCr
             + "LEFT JOIN FETCH p.programme "
             + "ORDER BY c.expectedReleaseDate ASC")
     List<DonorTrancheCriterion> findAllInflowLines();
+
+    /** A tranche by its permanent code (FP-2026-001-T2) — used to match rows in a CSV import. */
+    Optional<DonorTrancheCriterion> findByTrancheCode(String trancheCode);
 }

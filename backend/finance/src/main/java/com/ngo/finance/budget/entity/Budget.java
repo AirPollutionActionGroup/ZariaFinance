@@ -61,7 +61,7 @@ public class Budget extends AuditEntity {
     @Column(name = "budget_type", nullable = false, length = 20)
     private BudgetType budgetType;
 
-    /** Required for PROGRAMME budgets, null for ORGANISATION ones. */
+    /** Required for PROGRAMME and PROJECT budgets, null for ORGANISATION ones. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "programme_id")
     private Programme programme;

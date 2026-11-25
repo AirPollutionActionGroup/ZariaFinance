@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
   Autocomplete,
+  Badge,
   Box,
   Button,
   Card,
+  Collapse,
   Grid,
   MenuItem,
   Stack,
@@ -11,10 +13,14 @@ import {
   TableFooter,
   TableRow,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
+import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
+import TuneIcon from '@mui/icons-material/Tune';
 import { useNavigate } from 'react-router-dom';
 import { DataTable, PageHeader, SearchField, StatusChip } from '../../../shared/components/index.js';
 import { formatInrExact } from '../../../lib/format/currency.js';
@@ -22,16 +28,56 @@ import { formatDate } from '../../../lib/format/date.js';
 import { downloadCsv, toCsv } from '../../../lib/export/csv.js';
 import { useFinancialYears } from '../../financial-year/hooks/useFinancialYears.js';
 import { useOutflowRows } from '../../outflow-budget/hooks/useOutflow.js';
-import { BOOK_TONE } from '../../donation-management/constants.js';
-import { BOOKS } from '../../donor-management/lib/donorBook.js';
+import { BOOK_TONE } from '../../../shared/constants/book.js';
 import { useDebitNotes } from '../hooks/useDebitNotes.js';
-import { MONEY_SX } from '../../credit-notes/components/NoteLayout.jsx';
-import { DebitSummaryCard } from '../components/DebitSummaryCard.jsx';
+import { BookSplitBar, FigureStrip, FigureTile, MONEY_SX, pct, plural } from '../../credit-notes/components/NoteLayout.jsx';
 import { summarizeDebitNotes } from '../lib/summarizeDebitNotes.js';
 import { donorsOf, EMPTY_FILTERS, filterDebitNotes, hasActiveFilters } from '../lib/filterDebitNotes.js';
-import { DEBIT_NOTE_REASON, PAYEE_CATEGORIES, reasonLabel } from '../constants.js';
+import { PAYEE_CATEGORIES } from '../constants.js';
+import { useOverBudgetReasons } from '../../masters/hooks/useOverBudgetReasons.js';
 
 const payeeCategoryLabel = (code) => PAYEE_CATEGORIES.find((c) => c.value === code)?.label || '';
+/**
+ * The figures for the notes listed below (they follow the filters): what went
+ * out, how much was charged to donor funds, how much was over budget, and the
+ * LC / FC split.
+ */
+function DebitFigures({ summary, period, filtered, onClearFilters }) {
+  const lc = summary.byBook.LC.amount;
+  const fc = summary.byBook.FC.amount;
+  return (
+    <FigureStrip period={period} count={summary.issuedCount} filtered={filtered} onClearFilters={onClearFilters}>
+      <FigureTile
+        label="Total debited"
+        value={formatInrExact(summary.issuedTotal)}
+        color={summary.issuedTotal ? 'error.main' : 'text.disabled'}
+        sub={`${plural(summary.issuedCount, 'note')} · ${plural(summary.lineCount, 'line')}`}
+      />
+      <FigureTile
+        label="Charged to funds"
+        value={formatInrExact(summary.toFund.amount)}
+        sub={
+          summary.toFund.count
+            ? `${pct(summary.toFund.amount, summary.issuedTotal)}% · ${plural(summary.fundCount, 'fund')} · ${plural(summary.donorCount, 'donor')}`
+            : 'None charged to a donor fund'
+        }
+      />
+      <FigureTile
+        label="Over budget"
+        value={formatInrExact(summary.overBudget.amount)}
+        color={summary.overBudget.amount ? 'warning.main' : undefined}
+        sub={
+          summary.overBudget.count
+            ? `${plural(summary.overBudget.count, 'note')} · ${formatInrExact(summary.withinBudget.amount)} within budget`
+            : 'All within budget'
+        }
+      />
+      <FigureTile label="By book" value={`LC ${formatInrExact(lc)}`} sub={`FC ${formatInrExact(fc)}`}>
+        <BookSplitBar lc={lc} fc={fc} />
+      </FigureTile>
+    </FigureStrip>
+  );
+}
 
 /** All debit notes — /debit-notes. Every note adds to Spent on the Outflow Budget. */
 export function DebitNotesPage() {
@@ -41,6 +87,10 @@ export function DebitNotesPage() {
   const linesQuery = useOutflowRows();
   const lines = useMemo(() => linesQuery.data || [], [linesQuery.data]);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
+  // Reason filter: every reason in Masters (active or not), plus any name already on a note.
+  const reasonsQuery = useOverBudgetReasons('');
+  const reasonNames = [...new Set([...(reasonsQuery.data || []).map((r) => r.name), ...(notesQuery.data || []).map((n) => n.reason).filter(Boolean)])].sort();
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // Financial year: null = not touched yet, so it follows the year marked
   // current; 'All' or an id once the user picks one.
@@ -64,6 +114,9 @@ export function DebitNotesPage() {
     setFyChoice(null);
   };
 
+  // Filters tucked under "More filters" — counted on its button so none is hidden unnoticed.
+  const moreCount = [filters.lineId, filters.donor, filters.reason !== 'All', filters.from, filters.to].filter(Boolean).length;
+
   // The summary follows the filters, so it always describes the rows shown below.
   const summary = useMemo(() => summarizeDebitNotes(filtered), [filtered]);
 
@@ -75,12 +128,14 @@ export function DebitNotesPage() {
         { header: 'Book', value: (n) => n.book },
         { header: 'Outflow line', value: (n) => n.outflowLineId },
         { header: 'Line description', value: (n) => lineById[n.outflowLineId]?.line || n.lineDescription || '' },
-        { header: 'Reason', value: (n) => reasonLabel(n.reason) },
+        { header: 'Reason', value: (n) => n.reason || '' },
         { header: 'Payee category', value: (n) => payeeCategoryLabel(n.payeeCategory) },
         { header: 'Payee', value: (n) => n.payee?.name },
         { header: 'Payment mode', value: (n) => n.paymentMode?.name },
         { header: 'Bank account', value: (n) => n.bankAccount?.name },
         { header: 'Reference', value: (n) => n.reference },
+        { header: 'Tally voucher type', value: (n) => n.tallyVoucherType },
+        { header: 'Tally voucher no.', value: (n) => n.tallyVoucherNo },
         { header: 'Group', value: (n) => n.group?.name },
         { header: 'Ledger / payment type', value: (n) => n.ledger?.name },
         { header: 'Donor', value: (n) => n.donor?.name },
@@ -120,7 +175,7 @@ export function DebitNotesPage() {
           </Typography>
           {n.reason ? (
             <Typography variant="caption" sx={{ color: 'warning.main', display: 'block', fontWeight: 600 }}>
-              Over budget · {reasonLabel(n.reason)}
+              Over budget · {n.reason}
             </Typography>
           ) : null}
         </Box>
@@ -134,7 +189,9 @@ export function DebitNotesPage() {
         <Box>
           <Typography variant="body2">{n.payee?.name || '—'}</Typography>
           <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-            {[payeeCategoryLabel(n.payeeCategory), n.paymentMode?.name, n.reference].filter(Boolean).join(' · ')}
+            {[payeeCategoryLabel(n.payeeCategory), n.paymentMode?.name, n.reference, n.tallyVoucherNo ? `Tally ${[n.tallyVoucherType, n.tallyVoucherNo].filter(Boolean).join(' ')}` : null]
+              .filter(Boolean)
+              .join(' · ')}
           </Typography>
         </Box>
       ),
@@ -192,11 +249,11 @@ export function DebitNotesPage() {
     <Box sx={{ maxWidth: 1400 }}>
       <PageHeader
         title="Debit Notes"
-        subtitle="Extra money that went out against an outflow budget line — added to Spent, and optionally charged to a donor fund."
+        subtitle="Extra money paid out against an outflow budget line — added to Spent, and optionally charged to a donor fund."
         actions={
           <Stack direction="row" spacing={1.5}>
-            <Button variant="outlined" onClick={() => navigate('/credit-notes')}>
-              Credit Notes
+            <Button color="inherit" onClick={() => navigate('/credit-notes')} sx={{ color: 'text.secondary' }}>
+              Credit notes
             </Button>
             <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/debit-notes/new')}>
               New debit note
@@ -205,113 +262,135 @@ export function DebitNotesPage() {
         }
       />
 
-      <DebitSummaryCard
+      <DebitFigures
         summary={summary}
-        period={selectedFy ? `FY ${selectedFy.code} · ${formatDate(selectedFy.startDate)} – ${formatDate(selectedFy.endDate)}` : 'All financial years'}
+        period={selectedFy ? `${selectedFy.code} · ${formatDate(selectedFy.startDate)} – ${formatDate(selectedFy.endDate)}` : 'All financial years'}
         filtered={anyFilter}
-        totalCount={notes.length}
         onClearFilters={clearFilters}
       />
 
-      <Card sx={{ p: 2, mb: 2 }}>
-        <Grid container spacing={1.5} alignItems="center">
-          <Grid size={{ xs: 12, md: 4 }}>
-            <SearchField placeholder="Search note no., line, payee, fund, reference…" value={filters.query} onChange={setFilter('query')} />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-            <Autocomplete
-              size="small"
-              options={lines}
-              value={filters.lineId ? lineById[filters.lineId] || null : null}
-              onChange={(_, line) => setFilter('lineId')(line?.id || null)}
-              getOptionLabel={(l) => `${l.budgetCode} · ${l.lineCode} · Q${l.quarter} — ${l.line}`}
-              isOptionEqualToValue={(a, b) => a.id === b.id}
-              renderInput={(params) => <TextField {...params} placeholder="All outflow lines" />}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6, md: 4 }}>
-            <Autocomplete
-              size="small"
-              options={donorOptions}
-              value={filters.donor}
-              onChange={(_, donor) => setFilter('donor')(donor || null)}
-              getOptionLabel={(d) => d.name}
-              isOptionEqualToValue={(a, b) => String(a.id ?? a.name) === String(b.id ?? b.name)}
-              renderInput={(params) => <TextField {...params} placeholder="All donors" />}
-            />
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-            <TextField select fullWidth size="small" value={filters.book} onChange={(e) => setFilter('book')(e.target.value)}>
-              <MenuItem value="All">All Books</MenuItem>
-              {BOOKS.map((b) => (
-                <MenuItem key={b.value} value={b.value}>{b.label}</MenuItem>
-              ))}
-            </TextField>
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-            <TextField select fullWidth size="small" value={filters.reason} onChange={(e) => setFilter('reason')(e.target.value)}>
-              <MenuItem value="All">All Reasons</MenuItem>
-              {Object.entries(DEBIT_NOTE_REASON).map(([code, label]) => (
-                <MenuItem key={code} value={code}>{label}</MenuItem>
-              ))}
-            </TextField>
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-            <TextField
-              select
-              fullWidth
-              size="small"
-              label="Financial year"
-              value={fyValue}
-              onChange={(e) => setFyChoice(e.target.value)}
-              disabled={financialYearsQuery.isLoading}
-              helperText={financialYearsQuery.isError ? "Couldn't load financial years" : undefined}
-              error={financialYearsQuery.isError}
-            >
-              <MenuItem value="All">All Financial Years</MenuItem>
-              {financialYears.map((fy) => (
-                <MenuItem key={fy.id} value={String(fy.id)}>
-                  {fy.code}
-                  {fy.current ? ' (current)' : ''}
-                </MenuItem>
-              ))}
-            </TextField>
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-            <TextField
-              fullWidth
-              size="small"
-              type="date"
-              label="From"
-              value={filters.from}
-              onChange={(e) => setFilter('from')(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: filters.to || undefined } }}
-            />
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3, md: 2 }}>
-            <TextField
-              fullWidth
-              size="small"
-              type="date"
-              label="To"
-              value={filters.to}
-              onChange={(e) => setFilter('to')(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: filters.from || undefined } }}
-            />
-          </Grid>
-          <Grid size={12}>
-            <Stack direction="row" spacing={1} justifyContent={{ sm: 'flex-end' }}>
-              {anyFilter ? (
-                <Button size="small" color="inherit" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-              ) : null}
-              <Button size="small" variant="outlined" startIcon={<FileDownloadOutlinedIcon />} onClick={handleExport} disabled={!filtered.length}>
-                Export CSV
+      {/* Filter bar: the common filters in one row, the rest under "More filters". */}
+      <Card variant="outlined" sx={{ mb: 2, borderRadius: 3 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.25} sx={{ p: 1.5, alignItems: { md: 'center' } }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <SearchField placeholder="Search note, line, payee, fund, reference or Tally no." value={filters.query} onChange={setFilter('query')} />
+          </Box>
+          <TextField
+            select
+            size="small"
+            value={fyValue}
+            onChange={(e) => setFyChoice(e.target.value)}
+            disabled={financialYearsQuery.isLoading}
+            error={financialYearsQuery.isError}
+            sx={{ minWidth: 190 }}
+            slotProps={{ htmlInput: { 'aria-label': 'Financial year' } }}
+          >
+            <MenuItem value="All">All financial years</MenuItem>
+            {financialYears.map((fy) => (
+              <MenuItem key={fy.id} value={String(fy.id)}>
+                {fy.code}
+                {fy.current ? ' · current' : ''}
+              </MenuItem>
+            ))}
+          </TextField>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={filters.book}
+            onChange={(_, value) => value && setFilter('book')(value)}
+            aria-label="Book"
+          >
+            {['All', 'LC', 'FC'].map((b) => (
+              <ToggleButton key={b} value={b} sx={{ px: 1.75, fontWeight: 600, textTransform: 'none' }}>
+                {b === 'All' ? 'All books' : b}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <Badge color="success" badgeContent={moreCount} invisible={!moreCount}>
+              <Button
+                variant={moreOpen ? 'contained' : 'outlined'}
+                color="inherit"
+                startIcon={<TuneIcon />}
+                onClick={() => setMoreOpen((o) => !o)}
+                aria-expanded={moreOpen}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                More filters
               </Button>
-            </Stack>
+            </Badge>
+            <Button variant="outlined" startIcon={<UploadFileOutlinedIcon />} onClick={() => navigate('/debit-notes/import')} sx={{ whiteSpace: 'nowrap' }}>
+              Import
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<FileDownloadOutlinedIcon />}
+              onClick={handleExport}
+              disabled={!filtered.length}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              Export
+            </Button>
+          </Stack>
+        </Stack>
+        <Collapse in={moreOpen}>
+          <Grid container spacing={1.5} sx={{ px: 1.5, pb: 1.5, pt: 0.5, borderTop: '1px solid', borderColor: 'divider', mt: 0 }}>
+            <Grid size={{ xs: 12, md: 3 }} sx={{ pt: 1.5 }}>
+              <Autocomplete
+                size="small"
+                options={lines}
+                value={filters.lineId ? lineById[filters.lineId] || null : null}
+                onChange={(_, line) => setFilter('lineId')(line?.id || null)}
+                getOptionLabel={(l) => `${l.budgetCode} · ${l.lineCode} · Q${l.quarter} — ${l.line}`}
+                isOptionEqualToValue={(a, b) => a.id === b.id}
+                renderInput={(params) => <TextField {...params} label="Outflow line" placeholder="All lines" />}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }} sx={{ pt: 1.5 }}>
+              <Autocomplete
+                size="small"
+                options={donorOptions}
+                value={filters.donor}
+                onChange={(_, donor) => setFilter('donor')(donor || null)}
+                getOptionLabel={(d) => d.name}
+                isOptionEqualToValue={(a, b) => String(a.id ?? a.name) === String(b.id ?? b.name)}
+                renderInput={(params) => <TextField {...params} label="Donor" placeholder="All donors" />}
+              />
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 2 }} sx={{ pt: 1.5 }}>
+              <TextField select fullWidth size="small" label="Reason" value={filters.reason} onChange={(e) => setFilter('reason')(e.target.value)}>
+                <MenuItem value="All">All reasons</MenuItem>
+                {reasonNames.map((name) => (
+                  <MenuItem key={name} value={name}>
+                    {name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+            <Grid size={{ xs: 6, md: 2 }} sx={{ pt: 1.5 }}>
+              <TextField
+                fullWidth
+                size="small"
+                type="date"
+                label="From"
+                value={filters.from}
+                onChange={(e) => setFilter('from')(e.target.value)}
+                slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: filters.to || undefined } }}
+              />
+            </Grid>
+            <Grid size={{ xs: 6, md: 2 }} sx={{ pt: 1.5 }}>
+              <TextField
+                fullWidth
+                size="small"
+                type="date"
+                label="To"
+                value={filters.to}
+                onChange={(e) => setFilter('to')(e.target.value)}
+                slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: filters.from || undefined } }}
+              />
+            </Grid>
           </Grid>
-        </Grid>
+        </Collapse>
       </Card>
 
       <DataTable
@@ -329,7 +408,7 @@ export function DebitNotesPage() {
           !notes.length
             ? 'Raise a debit note when extra money goes out against an outflow line.'
             : selectedFy && !hasActiveFilters(filters)
-              ? `Nothing recorded in FY ${selectedFy.code} — pick another financial year or All Financial Years.`
+              ? `Nothing recorded in ${selectedFy.code} — pick another financial year or All financial years.`
               : 'Try another financial year, widening the date range, or clearing filters.'
         }
       />
